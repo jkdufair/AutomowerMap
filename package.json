@@ -9,7 +9,7 @@
     "clean": "rimraf dist",
     "prestart": "npm run clean && npm run build",
     "start": "func start",
-    "test": "jest --watch"
+    "test": "jest"
   },
   "dependencies": {
     "@azure/data-tables": "^13.2.2",
