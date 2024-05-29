@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="EN_US">
+<head>
+	<title>Automower Map</title>
+	<script src="https://polyfill.io/v3/polyfill.min.js?features=default"></script>
+	<style>
+		#map {
+			height: 100%;
+		}
+
+		#slider-container {
+			position: absolute;
+			top: 75px;
+			left: 0;
+			width: 100%;
+			height: 10px;
+			z-index: 999;
+			text-align: center;
+		}
+
+		#time-slider {
+			-webkit-appearance: none;
+			width: 100%;
+			border-radius: 15px;
+			background: #d9d9d9;
+		}
+
+		#slider-value {
+			color: #fff;
+			font-size: 2rem;
+			font-family: sans-serif;
+		}
+
+		html,
+		body {
+			height: 100%;
+			margin: 0;
+			padding: 0;
+		}
+
+	</style>
+</head>
+<body>
+<script>
+	let map;
+	let mowerPath;
+
+	async function updateSlider(val) {
+		const hours = Math.floor(val / 60);
+		const minutes = val % 60
+		let label = `${hours} hour${hours !== 1 ? 's' : ''}`;
+		if (minutes > 0) label += `<br/>${minutes} minute${minutes !== 1 ? 's' : ''}`;
+		document.getElementById('slider-value').innerHTML = label;
+		await initMap();
+	}
+
+	async function initMap() {
+		const minutes = document.getElementById('time-slider').value;
+		const response = await fetch(`https://automower-map.azurewebsites.net/api/GetStoredCoordinates?minutes=${minutes}`)
+		const mowerCoordinates = await response.json();
+		if (mowerPath) mowerPath.setMap(null);
+		mowerPath = new google.maps.Polyline({
+			path: mowerCoordinates,
+			geodesic: true,
+			strokeColor: "#22DD22",
+			strokeOpacity: 1.0,
+			strokeWeight: 2,
+		});
+
+		map = map ?? new google.maps.Map(document.getElementById("map"), {
+			zoom: 20,
+			center: { lat: 42.6074567, lng: -76.9277306 },
+			mapTypeId: "hybrid",
+		});
+		mowerPath.setMap(map);
+	}
+
+	window.initMap = initMap;
+	window.updateSlider = updateSlider;
+</script>
+<div id="map"></div>
+<div id="slider-container">
+	<input type="range" min="0" max="2880" step="10" value="1440" class="slider" id="time-slider" onchange="initMap()" oninput="updateSlider(this.value)">
+	<label for="time-slider" id="slider-value">24 hours</label>
+</div>
+<script
+	src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAfFFzY7H6MNr90tqwBpSz0yKu5rEJY-BM&callback=initMap&v=weekly&loading=async"
+	defer
+></script>
+</body>
+</html>

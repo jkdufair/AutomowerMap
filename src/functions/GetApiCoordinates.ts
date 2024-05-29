@@ -1,5 +1,6 @@
-import { app, input, output, InvocationContext, Timer } from "@azure/functions"
-import { TableClient } from "@azure/data-tables"
+import {app, input, output, InvocationContext, Timer} from "@azure/functions"
+import {AutomowerPosition} from "../types/AutomowerPosition";
+import {getTableRows} from "../shared/table";
 
 const key = process.env['AUTOMOWER_APPLICATION_KEY']
 const secret = process.env['AUTOMOWER_APPLICATION_SECRET']
@@ -7,13 +8,6 @@ const mowerId = process.env['AUTOMOWER_MOWER_ID']
 const authEndpoint = 'https://api.authentication.husqvarnagroup.dev/v1/oauth2/token'
 const endpoint = 'https://api.amc.husqvarna.dev/v1'
 const frequencyMinutes = 10
-
-interface AutomowerPosition {
-	partitionKey: string
-	rowKey: string
-	latitude: number
-	longitude: number
-}
 
 interface Position {
 	latitude: number
@@ -77,7 +71,7 @@ export async function getNewPositions(positions: Array<Position>, tableRows: Arr
 	}
 }
 
-export async function AutomowerGetCoordinates(myTimer: Timer, context: InvocationContext): Promise<Array<AutomowerPosition>> {
+export async function GetApiCoordinates(myTimer: Timer, context: InvocationContext): Promise<Array<AutomowerPosition>> {
 	// Get bearer token from API
 	const response = await fetch(authEndpoint, {
 		method: 'POST',
@@ -101,33 +95,15 @@ export async function AutomowerGetCoordinates(myTimer: Timer, context: Invocatio
 	let positions = mowerData.data.attributes.positions
 	context.log('API Positions:', positions)
 	await new Promise(r => setTimeout(r, 100))
-	// context.log('First position:', positions[0])
-	// await new Promise(r => setTimeout(r, 100))
-	// context.log('Last position:', positions[positions.length - 1])
-	// await new Promise(r => setTimeout(r, 100))
 
 	// Get last coordinates from Table
-	const tableClient = TableClient.fromConnectionString(process.env['AzureWebJobsStorage'], 'AutomowerPositions')
-	const filterDate = new Date(Date.now())
-	// Sometimes the mower API doesn't update for quite some time. We get, hopefully, enough rows to cover the gap
-	filterDate.setMinutes(filterDate.getMinutes() - Math.min((frequencyMinutes * 10), 120))
-	const iterator = tableClient.listEntities<AutomowerPosition>({
-		queryOptions: {
-			filter: `Timestamp ge datetime'${filterDate}'`
-		}
-	})
-	let tableRows: Array<AutomowerPosition> = []
-	for await (const row of iterator) {
-		tableRows.push(row)
-	}
-	// Sort in descending order, newest to oldest
-	tableRows = tableRows.sort((a, b) => parseInt(b.rowKey) - parseInt(a.rowKey))
-	context.log('Table rows:', tableRows.map(row => { return { latitude: row.latitude, longitude: row.longitude } }))
+	// Sometimes the mower API doesn't update for quite some time. We get, hopefully with 10 times the frequency,
+	// enough rows to cover the gap
+	const tableRows = await getTableRows(Math.min(frequencyMinutes * 10, 120))
+	context.log('Table rows:', tableRows.map(row => {
+		return {latitude: row.latitude, longitude: row.longitude}
+	}))
 	await new Promise(r => setTimeout(r, 100))
-	// context.log('First table row', tableRows[0])
-	// await new Promise(r => setTimeout(r, 100))
-	// context.log('Last table row', tableRows[tableRows.length - 1])
-	// await new Promise(r => setTimeout(r, 100))
 
 	const newPositions = (await getNewPositions(positions, tableRows, context)).reverse()
 	context.log(`New positions: ${newPositions.length}`, newPositions)
@@ -151,9 +127,9 @@ const tableOutput = output.table({
 	tableName: 'AutomowerPositions'
 })
 
-app.timer('AutomowerGetCoordinates', {
+app.timer('GetApiCoordinates', {
 	schedule: `0 0/${frequencyMinutes} * * * *`,
-	handler: AutomowerGetCoordinates,
+	handler: GetApiCoordinates,
 	runOnStartup: true,
 	return: tableOutput
 })
