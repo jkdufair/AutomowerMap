@@ -1,4 +1,5 @@
-import {app, input, output, InvocationContext, Timer} from "@azure/functions";
+import { app, input, output, InvocationContext, Timer } from "@azure/functions"
+import { TableClient } from "@azure/data-tables"
 
 const key = process.env['AUTOMOWER_APPLICATION_KEY']
 const secret = process.env['AUTOMOWER_APPLICATION_SECRET']
@@ -8,8 +9,8 @@ const endpoint = 'https://api.amc.husqvarna.dev/v1'
 const frequencyMinutes = 10
 
 interface AutomowerPosition {
-	PartitionKey: string
-	RowKey: string
+	partitionKey: string
+	rowKey: string
 	latitude: number
 	longitude: number
 }
@@ -40,8 +41,44 @@ interface MowerData {
 	data: MowerDataData
 }
 
-export async function AutomowerGetCoordinates(myTimer: Timer, context: InvocationContext): Promise<AutomowerPosition[]> {
-	// Get bearer token
+function positionArraysEqual(a: Array<Position>, b: Array<Position>) {
+	if (a === b) return true
+	if (a == null || b == null) return false
+	if (a.length !== b.length) return false
+	if (a.length === 0 || b.length === 0) return false
+	for (let i = 0; i < a.length; ++i) {
+		if (a[i].latitude !== b[i].latitude || a[i].longitude !== b[i].longitude) return false
+	}
+	return true
+}
+
+export async function getNewPositions(positions: Array<Position>, tableRows: Array<AutomowerPosition>, context: InvocationContext = null): Promise<Array<Position>> {
+	// Diff with API coordinates
+	// Find the index at which 2 (or however many remain) match the first n table rows
+	const firstMatchingIndex = positions.findIndex((_, index) => {
+		const positionsAtIndex = positions.slice(index, index + Math.min(3, tableRows.length))
+		const tableRowsAtIndex = tableRows.map(row => ({
+			latitude: row.latitude,
+			longitude: row.longitude
+		})).slice(0, positionsAtIndex.length)
+		return positionArraysEqual(positionsAtIndex, tableRowsAtIndex)
+	})
+	context?.log('First matching index:', firstMatchingIndex)
+	await new Promise(r => setTimeout(r, 100))
+	if (firstMatchingIndex === -1) {
+		// No match - all new positions
+		return positions
+	} else if (firstMatchingIndex === 0) {
+		// All matching - no new positions
+		return []
+	} else {
+		// Some matching - return the new positions
+		return positions.slice(0, firstMatchingIndex)
+	}
+}
+
+export async function AutomowerGetCoordinates(myTimer: Timer, context: InvocationContext): Promise<Array<AutomowerPosition>> {
+	// Get bearer token from API
 	const response = await fetch(authEndpoint, {
 		method: 'POST',
 		headers: {
@@ -49,80 +86,65 @@ export async function AutomowerGetCoordinates(myTimer: Timer, context: Invocatio
 		},
 		body: `grant_type=client_credentials&client_id=${key}&client_secret=${secret}`
 	})
-	const data = await response.json()
+	const authData = await response.json()
 
-	// Get mower data
+	// Get mower data from API
 	const mowerResponse = await fetch(`${endpoint}/mowers/${mowerId}`, {
 		headers: {
 			'X-Api-Key': key,
 			'Authorization-Provider': 'husqvarna',
-			'Authorization': `Bearer ${data.access_token}`
+			'Authorization': `Bearer ${authData.access_token}`
 		}
 	})
+	// Positions come in descending order, newest to oldest
 	const mowerData: MowerData = await mowerResponse.json()
-	// Positions are in descending order. Reverse them to save in ascending order
-	const positions = mowerData.data.attributes.positions.reverse()
-	context.log('Positions:', positions.length)
+	let positions = mowerData.data.attributes.positions
+	context.log('API Positions:', positions)
 	await new Promise(r => setTimeout(r, 100))
-	context.log('First position:', positions[0])
-	await new Promise(r => setTimeout(r, 100))
-	context.log('Last position:', positions[positions.length - 1])
-	await new Promise(r => setTimeout(r, 100))
+	// context.log('First position:', positions[0])
+	// await new Promise(r => setTimeout(r, 100))
+	// context.log('Last position:', positions[positions.length - 1])
+	// await new Promise(r => setTimeout(r, 100))
 
-	// Get last coordinates
-	const tableRows: Array<AutomowerPosition> = (context.extraInputs.get(tableInput) as Array<AutomowerPosition>)
-		.sort((a, b) => parseInt(a.RowKey) - parseInt(b.RowKey))
-	context.log('Table rows:', tableRows.length)
-	await new Promise(r => setTimeout(r, 100))
-	context.log('First table row', tableRows[0])
-	await new Promise(r => setTimeout(r, 100))
-	context.log('Last table row', tableRows[tableRows.length - 1]);
-	await new Promise(r => setTimeout(r, 100))
-
-	// Diff with API coordinates
-	// If we match 3 sets of coordinates in a row, then we are overlapping and we return everything prior
-	const newPositions = positions.reduce((acc, position) => {
-		// Check if we have a match
-		const match = tableRows.findIndex(row => row.latitude === position.latitude && row.longitude === position.longitude)
-		const newPositions = acc.positions
-		let newOverlapping = acc.overlappingPositions
-		if (match === -1) {
-			// No match - add to positions
-			newPositions.push(position)
-		} else if (acc.overlappingPositions.length < 3) {
-			// Matched, but not enough to be sure there's an overlap. Add to possible overlaps
-			newOverlapping.push({index: match, position: tableRows[match]})
-		} else if (acc.overlappingPositions.length === 3 &&
-			acc.overlappingPositions[2].index - acc.overlappingPositions[1].index !== 1 ||
-			acc.overlappingPositions[1].index - acc.overlappingPositions[0].index !== 1) {
-			// 3 matches, but not consecutive. Keep going
-			newPositions.concat(acc.overlappingPositions.map(o => o.position))
-			newOverlapping = []
+	// Get last coordinates from Table
+	const tableClient = TableClient.fromConnectionString(process.env['AzureWebJobsStorage'], 'AutomowerPositions')
+	const filterDate = new Date(Date.now())
+	// Sometimes the mower API doesn't update for quite some time. We get, hopefully, enough rows to cover the gap
+	filterDate.setMinutes(filterDate.getMinutes() - Math.min((frequencyMinutes * 10), 120))
+	const iterator = tableClient.listEntities<AutomowerPosition>({
+		queryOptions: {
+			filter: `Timestamp ge datetime'${filterDate}'`
 		}
-		return { positions: newPositions, overlappingPositions: newOverlapping }
-	}, { positions: [], overlappingPositions: [] })
-		.positions
+	})
+	let tableRows: Array<AutomowerPosition> = []
+	for await (const row of iterator) {
+		tableRows.push(row)
+	}
+	// Sort in descending order, newest to oldest
+	tableRows = tableRows.sort((a, b) => parseInt(b.rowKey) - parseInt(a.rowKey))
+	context.log('Table rows:', tableRows.map(row => { return { latitude: row.latitude, longitude: row.longitude } }))
+	await new Promise(r => setTimeout(r, 100))
+	// context.log('First table row', tableRows[0])
+	// await new Promise(r => setTimeout(r, 100))
+	// context.log('Last table row', tableRows[tableRows.length - 1])
+	// await new Promise(r => setTimeout(r, 100))
 
-	context.log('New positions:', newPositions)
+	const newPositions = (await getNewPositions(positions, tableRows, context)).reverse()
+	context.log(`New positions: ${newPositions.length}`, newPositions)
 	await new Promise(r => setTimeout(r, 100))
 
 	// Save new coordinates
-	const now = new Date().getTime()
+	const now = new Date().getTime().toString()
+	// Store in ascending order, oldest to newest
 	return newPositions.map(
 		(position, index) => ({
-			PartitionKey: 'Automower',
-			RowKey: (now + index).toString().padStart(20, '0'),
+			partitionKey: 'Dufair',
+			rowKey: (now + index).toString().padStart(20, '0'),
 			latitude: position.latitude,
 			longitude: position.longitude
 		})
 	)
 }
-
-let tableInput = input.table({
-	connection: 'Storage',
-	tableName: 'AutomowerPositions',
-	filter: `RowKey gt '${(new Date().getTime() - (1000 * 60 * frequencyMinutes * 2)).toString().padStart(20, '0')}'`
-})
 
 const tableOutput = output.table({
 	connection: 'Storage',
@@ -131,9 +153,7 @@ const tableOutput = output.table({
 
 app.timer('AutomowerGetCoordinates', {
 	schedule: `0 0/${frequencyMinutes} * * * *`,
-	//schedule: '* * * * * *',
 	handler: AutomowerGetCoordinates,
 	runOnStartup: true,
-	extraInputs: [tableInput],
 	return: tableOutput
 })
