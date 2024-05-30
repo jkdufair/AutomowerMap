@@ -10,7 +10,7 @@
 
 		#slider-container {
 			position: absolute;
-			top: 75px;
+			bottom: 96px;
 			left: 0;
 			width: 100%;
 			height: 10px;
@@ -23,6 +23,17 @@
 			width: 100%;
 			border-radius: 15px;
 			background: #d9d9d9;
+			height: 24px;
+		}
+
+		#time-slider::-webkit-slider-thumb {
+			-webkit-appearance: none;
+			appearance: none;
+			width: 36px;
+			height: 36px;
+			border-radius: 50%;
+			background: #FFF;
+			cursor: pointer;
 		}
 
 		#slider-value {
@@ -46,12 +57,12 @@
 	let mowerPath;
 
 	async function updateSlider(val) {
-		const hours = Math.floor(val / 60);
-		const minutes = val % 60
-		let label = `${hours} hour${hours !== 1 ? 's' : ''}`;
-		if (minutes > 0) label += `<br/>${minutes} minute${minutes !== 1 ? 's' : ''}`;
-		document.getElementById('slider-value').innerHTML = label;
-		await initMap();
+			const hours = Math.floor(val / 60);
+			const minutes = val % 60
+			let label = `${hours} hour${hours !== 1 ? 's' : ''}`;
+			if (minutes > 0) label += `<br/>${minutes} minute${minutes !== 1 ? 's' : ''}`;
+			document.getElementById('slider-value').innerHTML = label;
+			await initMap();
 	}
 
 	async function initMap() {
@@ -80,7 +91,7 @@
 </script>
 <div id="map"></div>
 <div id="slider-container">
-	<input type="range" min="0" max="2880" step="10" value="1440" class="slider" id="time-slider" onchange="initMap()" oninput="updateSlider(this.value)">
+	<input type="range" min="0" max="2880" step="10" value="1440" id="time-slider" onchange="initMap()" oninput="updateSlider(this.value)">
 	<label for="time-slider" id="slider-value">24 hours</label>
 </div>
 <script
