@@ -117,10 +117,9 @@
     }
     #dl-section button:active { background: #0f2d22; }
 
-    /* ── Settings screen (full-viewport, map hidden underneath) ── */
+    /* ── Settings screen — app is hidden when this is open ── */
     #settings-overlay {
-      display: none; position: fixed; inset: 0; background: var(--bg);
-      z-index: 100; overflow-y: auto;
+      display: none; height: 100%; background: var(--bg); overflow-y: auto;
     }
     #settings-overlay.open { display: block; }
     #settings-sheet {
@@ -254,8 +253,16 @@ routeLayer = L.layerGroup().addTo(map);
 // ── Settings ──────────────────────────────────────────────────────────────────
 function loadKey()    { return localStorage.getItem('ors_key') || ''; }
 function saveKey()    { const k = document.getElementById('key-input').value.trim(); if (k) localStorage.setItem('ors_key', k); }
-function openSettings()  { document.getElementById('settings-overlay').classList.add('open'); document.getElementById('key-input').value = loadKey(); }
-function closeSettings() { document.getElementById('settings-overlay').classList.remove('open'); }
+function openSettings()  {
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('settings-overlay').classList.add('open');
+  document.getElementById('key-input').value = loadKey();
+}
+function closeSettings() {
+  document.getElementById('settings-overlay').classList.remove('open');
+  document.getElementById('app').style.display = 'flex';
+  map.invalidateSize(); // re-render map after it was hidden
+}
 function maybeCloseSettings(e) { /* full-screen overlay — close via Done button only */ }
 function setCompare(n, btn) {
   numCompare = n;
