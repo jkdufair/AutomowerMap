@@ -117,15 +117,15 @@
     }
     #dl-section button:active { background: #0f2d22; }
 
-    /* ── Settings sheet ── */
+    /* ── Settings screen (full-viewport, map hidden underneath) ── */
     #settings-overlay {
-      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.72);
-      z-index: 100; align-items: flex-end; justify-content: center;
+      display: none; position: fixed; inset: 0; background: var(--bg);
+      z-index: 100; overflow-y: auto;
     }
-    #settings-overlay.open { display: flex; }
+    #settings-overlay.open { display: block; }
     #settings-sheet {
-      background: var(--surface); border-radius: 20px 20px 0 0;
-      padding: 20px 20px 36px; width: 100%; max-width: 480px;
+      max-width: 480px; margin: 0 auto;
+      padding: 24px 20px 48px;
     }
     #settings-sheet h2 { font-size: 1rem; margin-bottom: 16px; }
     #settings-sheet label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; }
@@ -204,7 +204,10 @@
 <!-- Settings sheet -->
 <div id="settings-overlay" onclick="maybeCloseSettings(event)">
   <div id="settings-sheet">
-    <h2>Settings</h2>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <button onclick="closeSettings()" style="background:none;border:none;color:var(--muted);font-size:1.5rem;cursor:pointer;padding:0;line-height:1">←</button>
+      <h2 style="margin:0">Settings</h2>
+    </div>
     <label for="key-input">OpenRouteService API Key</label>
     <input type="text" id="key-input" placeholder="Paste your free key here" oninput="saveKey()">
     <p>Free key — 2,000 routes/day, no card required:<br>
@@ -253,7 +256,7 @@ function loadKey()    { return localStorage.getItem('ors_key') || ''; }
 function saveKey()    { const k = document.getElementById('key-input').value.trim(); if (k) localStorage.setItem('ors_key', k); }
 function openSettings()  { document.getElementById('settings-overlay').classList.add('open'); document.getElementById('key-input').value = loadKey(); }
 function closeSettings() { document.getElementById('settings-overlay').classList.remove('open'); }
-function maybeCloseSettings(e) { if (e.target === document.getElementById('settings-overlay')) closeSettings(); }
+function maybeCloseSettings(e) { /* full-screen overlay — close via Done button only */ }
 function setCompare(n, btn) {
   numCompare = n;
   document.querySelectorAll('#compare-ctrl button').forEach(b => b.classList.remove('active'));
