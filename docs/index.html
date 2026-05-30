@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cycling Route Planner</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:      #111827;
+      --surface: #1f2937;
+      --border:  #374151;
+      --teal:    #34d399;
+      --teal-dk: #059669;
+      --text:    #f3f4f6;
+      --muted:   #9ca3af;
+      --red:     #f87171;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; }
+
+    /* ── Layout ── */
+    #app { display: flex; flex-direction: column; height: 100%; }
+
+    #topbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex; align-items: center; gap: 10px;
+      flex-shrink: 0; z-index: 10;
+    }
+    #topbar h1 { font-size: 1rem; font-weight: 700; color: var(--teal); flex: 1; }
+
+    #gear-btn {
+      background: none; border: none; color: var(--muted);
+      font-size: 1.4rem; cursor: pointer; padding: 4px; line-height: 1;
+    }
+
+    #map { flex: 1; min-height: 0; }
+
+    #bottom-panel {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      max-height: 55vh;
+      overflow-y: auto;
+    }
+
+    /* ── Controls ── */
+    #controls { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+
+    .row { display: flex; align-items: center; gap: 10px; }
+
+    .dist-label {
+      font-size: 1rem; font-weight: 700; color: var(--teal);
+      min-width: 60px; text-align: right;
+    }
+
+    input[type=range] {
+      flex: 1; -webkit-appearance: none; height: 6px;
+      background: var(--border); border-radius: 3px; outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 26px; height: 26px;
+      background: var(--teal); border-radius: 50%; cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,.4);
+    }
+    input[type=range]::-moz-range-thumb {
+      width: 26px; height: 26px; background: var(--teal);
+      border-radius: 50%; cursor: pointer; border: none;
+    }
+
+    .btn-row { display: flex; gap: 8px; }
+
+    button.primary {
+      flex: 1; background: var(--teal); color: #111;
+      border: none; border-radius: 10px; padding: 14px;
+      font-size: 1rem; font-weight: 700; cursor: pointer;
+    }
+    button.primary:active { background: var(--teal-dk); }
+    button.primary:disabled { background: #2d5a4a; color: #1a3d31; cursor: not-allowed; }
+
+    button.ghost {
+      flex: 1; background: none; border: 2px solid var(--teal); color: var(--teal);
+      border-radius: 10px; padding: 14px;
+      font-size: 1rem; font-weight: 700; cursor: pointer;
+    }
+    button.ghost:active { background: #0f2d22; }
+    button.ghost:disabled { border-color: #2d5a4a; color: #2d5a4a; cursor: not-allowed; }
+
+    /* ── Status ── */
+    #status {
+      padding: 8px 16px 0; font-size: 0.85rem; color: var(--muted);
+      min-height: 28px; line-height: 1.4;
+    }
+    #status.err { color: var(--red); }
+    #status.ok  { color: var(--teal); }
+
+    /* ── Stats ── */
+    #stats-row {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 1px; background: var(--border);
+      border-top: 1px solid var(--border); margin-top: 10px;
+    }
+    .stat-cell {
+      background: var(--surface);
+      padding: 10px 6px; text-align: center;
+    }
+    .stat-cell .sv { font-size: 1rem; font-weight: 700; color: var(--teal); }
+    .stat-cell .sl { font-size: 0.68rem; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: .04em; }
+
+    /* ── Elevation chart ── */
+    #elev-section { padding: 12px 16px 4px; display: none; }
+    #elev-section h3 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 8px; }
+    #chart-wrap { height: 100px; position: relative; }
+
+    /* ── Download ── */
+    #dl-section { padding: 10px 16px 16px; display: none; }
+
+    /* ── Settings overlay ── */
+    #settings-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7);
+      z-index: 100; align-items: flex-end; justify-content: center;
+    }
+    #settings-overlay.open { display: flex; }
+    #settings-sheet {
+      background: var(--surface); border-radius: 20px 20px 0 0;
+      padding: 20px 20px 36px; width: 100%; max-width: 480px;
+    }
+    #settings-sheet h2 { font-size: 1rem; margin-bottom: 16px; }
+    #settings-sheet label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; }
+    #settings-sheet input[type=text] {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); padding: 12px; font-size: 0.9rem;
+      font-family: monospace; outline: none;
+    }
+    #settings-sheet input[type=text]:focus { border-color: var(--teal); }
+    #settings-sheet a { color: var(--teal); font-size: 0.8rem; text-decoration: none; }
+    #settings-sheet p { font-size: 0.78rem; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+
+    .sheet-close {
+      display: block; margin-top: 18px; width: 100%;
+      background: var(--teal); color: #111; border: none;
+      border-radius: 10px; padding: 14px; font-size: 1rem; font-weight: 700; cursor: pointer;
+    }
+
+    /* ── Compare selector ── */
+    .compare-row { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+    .compare-row label { font-size: 0.82rem; color: var(--muted); }
+    .seg-ctrl { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .seg-ctrl button {
+      flex: 1; background: none; border: none; color: var(--muted);
+      padding: 8px 12px; font-size: 0.85rem; cursor: pointer;
+    }
+    .seg-ctrl button.active { background: var(--teal); color: #111; font-weight: 700; }
+
+    /* ── Spinner ── */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--teal); border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-left: 6px; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <h1>Cycling Route Planner</h1>
+    <button id="gear-btn" onclick="openSettings()" title="Settings">⚙︎</button>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="bottom-panel">
+    <div id="controls">
+      <div class="row">
+        <span style="font-size:.85rem;color:var(--muted);white-space:nowrap">Distance</span>
+        <input type="range" id="dist-slider" min="10" max="70" step="5" value="30" oninput="updateDistLabel()">
+        <span class="dist-label" id="dist-label">30 mi</span>
+      </div>
+
+      <div class="btn-row">
+        <button class="primary" id="gen-btn" onclick="generateRoutes()">Generate Route</button>
+        <button class="ghost"   id="next-btn" onclick="showNext()" disabled>Next Option</button>
+      </div>
+    </div>
+
+    <div id="status">Tap ⚙︎ to enter your API key, then Generate.</div>
+
+    <div id="stats-row" style="display:none">
+      <div class="stat-cell"><div class="sv" id="s-dist">—</div><div class="sl">Miles</div></div>
+      <div class="stat-cell"><div class="sv" id="s-up">—</div><div class="sl">Gain</div></div>
+      <div class="stat-cell"><div class="sv" id="s-time">—</div><div class="sl">Est Time</div></div>
+      <div class="stat-cell"><div class="sv" id="s-rank">—</div><div class="sl">Rank</div></div>
+    </div>
+
+    <div id="elev-section">
+      <h3>Elevation Profile</h3>
+      <div id="chart-wrap"><canvas id="elev-canvas"></canvas></div>
+    </div>
+
+    <div id="dl-section">
+      <button class="ghost" style="width:100%" onclick="downloadGPX()">⬇ Download GPX → import to Ride with GPS</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings sheet -->
+<div id="settings-overlay" onclick="maybeCloseSettings(event)">
+  <div id="settings-sheet">
+    <h2>Settings</h2>
+    <label for="key-input">OpenRouteService API Key</label>
+    <input type="text" id="key-input" placeholder="Paste your free key here" oninput="saveKey()">
+    <p>Free key (2,000 routes/day, no card required):<br>
+       <a href="https://openrouteservice.org/dev/#/signup" target="_blank">openrouteservice.org/dev/#/signup →</a></p>
+
+    <div class="compare-row">
+      <label>Compare routes</label>
+      <div class="seg-ctrl" id="compare-ctrl">
+        <button onclick="setCompare(3,this)">3</button>
+        <button onclick="setCompare(5,this)" class="active">5</button>
+        <button onclick="setCompare(8,this)">8</button>
+      </div>
+    </div>
+
+    <button class="sheet-close" onclick="closeSettings()">Done</button>
+  </div>
+</div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const HOME_LAT = 42.6074567;
+const HOME_LNG = -76.9277306;
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let routes = [], idx = 0, numCompare = 5;
+let routeLayer, elevChart, currentFeature = null;
+
+// ── Map ───────────────────────────────────────────────────────────────────────
+const map = L.map('map', { center: [HOME_LAT, HOME_LNG], zoom: 13, zoomControl: true });
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© <a href="https://openstreetmap.org/copyright">OSM</a>',
+  maxZoom: 19
+}).addTo(map);
+
+const homeIcon = L.divIcon({
+  className: '',
+  html: '<div style="width:14px;height:14px;background:#34d399;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.6)"></div>',
+  iconSize: [14,14], iconAnchor: [7,7]
+});
+L.marker([HOME_LAT, HOME_LNG], { icon: homeIcon }).addTo(map).bindPopup('<b>Home</b>');
+routeLayer = L.layerGroup().addTo(map);
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+function loadKey()    { return localStorage.getItem('ors_key') || ''; }
+function saveKey()    { const k = document.getElementById('key-input').value.trim(); if (k) localStorage.setItem('ors_key', k); }
+function openSettings()  { document.getElementById('settings-overlay').classList.add('open'); document.getElementById('key-input').value = loadKey(); }
+function closeSettings() { document.getElementById('settings-overlay').classList.remove('open'); }
+function maybeCloseSettings(e) { if (e.target === document.getElementById('settings-overlay')) closeSettings(); }
+
+function setCompare(n, btn) {
+  numCompare = n;
+  document.querySelectorAll('#compare-ctrl button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// Load saved key on page open
+document.getElementById('key-input').value = loadKey();
+
+// ── Distance slider ───────────────────────────────────────────────────────────
+function updateDistLabel() {
+  document.getElementById('dist-label').textContent = document.getElementById('dist-slider').value + ' mi';
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+function setStatus(msg, cls = '') {
+  const el = document.getElementById('status');
+  el.innerHTML = msg;
+  el.className = cls;
+}
+
+function setBusy(busy) {
+  const g = document.getElementById('gen-btn');
+  const n = document.getElementById('next-btn');
+  g.disabled = busy;
+  n.disabled = busy || routes.length <= 1;
+  g.innerHTML = busy ? 'Finding routes… <span class="spin"></span>' : 'Generate Route';
+}
+
+// ── API ───────────────────────────────────────────────────────────────────────
+async function fetchRoute(key, meters, seed) {
+  const res = await fetch('https://api.openrouteservice.org/v2/directions/cycling-road/geojson', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': key },
+    body: JSON.stringify({
+      coordinates: [[HOME_LNG, HOME_LAT]],
+      options: {
+        round_trip: { length: meters, points: 5, seed },
+        avoid_features: ['highways', 'tollways', 'ferries']
+      },
+      elevation: true,
+      instructions: false
+    })
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error?.message || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// ── Circularity ───────────────────────────────────────────────────────────────
+function circularity(coords) {
+  if (coords.length < 2) return 0;
+  const maxDist = Math.max(...coords.map(c => {
+    const dx = (c[0] - HOME_LNG) * Math.cos(HOME_LAT * Math.PI / 180) * 111.32;
+    const dy = (c[1] - HOME_LAT) * 111.32;
+    return Math.sqrt(dx*dx + dy*dy);
+  }));
+  let totalKm = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const dx = (coords[i][0] - coords[i-1][0]) * Math.cos(HOME_LAT * Math.PI / 180) * 111.32;
+    const dy = (coords[i][1] - coords[i-1][1]) * 111.32;
+    totalKm += Math.sqrt(dx*dx + dy*dy);
+  }
+  const idealR = totalKm / (2 * Math.PI);
+  return Math.min(maxDist, idealR) / Math.max(maxDist, idealR);
+}
+
+function score(ascentFt, circ) {
+  return ascentFt + (1 - circ) * ascentFt * 0.3;
+}
+
+// ── Generate ──────────────────────────────────────────────────────────────────
+async function generateRoutes() {
+  const key = loadKey();
+  if (!key) { setStatus('Tap ⚙︎ to add your API key first.', 'err'); openSettings(); return; }
+
+  const miles  = parseInt(document.getElementById('dist-slider').value);
+  const meters = Math.round(miles * 1609.344);
+  const seeds  = Array.from({ length: numCompare }, (_, i) => i * 17 + 3);
+
+  routes = []; idx = 0;
+  setBusy(true);
+  routeLayer.clearLayers();
+  document.getElementById('stats-row').style.display   = 'none';
+  document.getElementById('elev-section').style.display = 'none';
+  document.getElementById('dl-section').style.display   = 'none';
+
+  let done = 0;
+  for (const seed of seeds) {
+    done++;
+    setStatus(`Checking option ${done} of ${numCompare}…`);
+    try {
+      const gj      = await fetchRoute(key, meters, seed);
+      const feature = gj.features[0];
+      const s       = feature.properties.summary;
+      const coords  = feature.geometry.coordinates;
+      const ascentFt = s.ascent * 3.28084;
+      const circ     = circularity(coords);
+      routes.push({
+        feature, seed,
+        distMi:   s.distance / 1609.344,
+        ascentFt,
+        descentFt: s.descent * 3.28084,
+        durationS: s.duration,
+        circ,
+        score:     score(ascentFt, circ),
+      });
+    } catch (e) {
+      console.warn('seed', seed, e.message);
+    }
+  }
+
+  setBusy(false);
+
+  if (!routes.length) {
+    setStatus('All requests failed — check your API key.', 'err');
+    return;
+  }
+
+  routes.sort((a, b) => a.score - b.score);
+  idx = 0;
+  render();
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function showNext() {
+  idx = (idx + 1) % routes.length;
+  render();
+}
+
+function fmtTime(s) {
+  const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+  return h ? `${h}h${m.toString().padStart(2,'0')}` : `${m}m`;
+}
+
+function render() {
+  const r = routes[idx];
+  currentFeature = r.feature;
+  routeLayer.clearLayers();
+
+  const ll   = r.feature.geometry.coordinates.map(c => [c[1], c[0]]);
+  const poly = L.polyline(ll, { color: '#34d399', weight: 4, opacity: 0.9 }).addTo(routeLayer);
+  map.fitBounds(poly.getBounds(), { padding: [30, 30] });
+
+  document.getElementById('s-dist').textContent  = r.distMi.toFixed(1);
+  document.getElementById('s-up').textContent    = `+${Math.round(r.ascentFt)}ft`;
+  document.getElementById('s-time').textContent  = fmtTime(r.durationS);
+  document.getElementById('s-rank').textContent  = `${idx+1}/${routes.length}`;
+  document.getElementById('stats-row').style.display = 'grid';
+
+  const coords = r.feature.geometry.coordinates;
+  if (coords[0].length >= 3) {
+    drawElevation(coords);
+    document.getElementById('elev-section').style.display = 'block';
+  }
+  document.getElementById('dl-section').style.display = 'block';
+  document.getElementById('next-btn').disabled = routes.length <= 1;
+
+  const note = idx === 0 ? ' — flattest + most circular found' : '';
+  setStatus(`${r.distMi.toFixed(1)} mi · +${Math.round(r.ascentFt)} ft gain${note}`, 'ok');
+}
+
+// ── Elevation chart ───────────────────────────────────────────────────────────
+function drawElevation(coords) {
+  const MAX = 150, step = Math.max(1, Math.floor(coords.length / MAX));
+  const pts = coords.filter((_, i) => i % step === 0);
+  let cum = 0;
+  const xs = pts.map((c, i) => {
+    if (i > 0) {
+      const dx = (c[0]-pts[i-1][0]) * Math.cos(HOME_LAT*Math.PI/180) * 111.32 * 0.621371;
+      const dy = (c[1]-pts[i-1][1]) * 111.32 * 0.621371;
+      cum += Math.sqrt(dx*dx + dy*dy);
+    }
+    return cum.toFixed(1);
+  });
+  const ys = pts.map(c => Math.round(c[2] * 3.28084));
+
+  if (elevChart) elevChart.destroy();
+  elevChart = new Chart(document.getElementById('elev-canvas').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: xs,
+      datasets: [{ data: ys, borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,.15)',
+        borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.3 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: { label: c => `${c.parsed.y} ft`, title: c => `${c[0].label} mi` }
+      }},
+      scales: {
+        x: { ticks: { color: '#6b7280', maxTicksLimit: 5, callback: v => `${v}mi` }, grid: { color: '#1f2937' } },
+        y: { ticks: { color: '#6b7280', callback: v => `${v}ft` }, grid: { color: '#1f2937' } }
+      }
+    }
+  });
+}
+
+// ── GPX export ────────────────────────────────────────────────────────────────
+function downloadGPX() {
+  if (!currentFeature) return;
+  const r      = routes[idx];
+  const coords = currentFeature.geometry.coordinates;
+  const name   = `Cycling ${r.distMi.toFixed(1)}mi (+${Math.round(r.ascentFt)}ft)`;
+  const now    = new Date().toISOString();
+
+  const trkpts = coords.map(c => {
+    const ele = c.length >= 3 ? `\n        <ele>${c[2].toFixed(1)}</ele>` : '';
+    return `      <trkpt lat="${c[1].toFixed(7)}" lon="${c[0].toFixed(7)}">${ele}\n      </trkpt>`;
+  }).join('\n');
+
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Cycling Route Planner"
+     xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>${name}</name><time>${now}</time></metadata>
+  <trk><name>${name}</name><trkseg>
+${trkpts}
+  </trkseg></trk>
+</gpx>`;
+
+  const a = Object.assign(document.createElement('a'), {
+    href:     URL.createObjectURL(new Blob([gpx], { type: 'application/gpx+xml' })),
+    download: `cycling_${r.distMi.toFixed(0)}mi.gpx`
+  });
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+</script>
+</body>
+</html>
