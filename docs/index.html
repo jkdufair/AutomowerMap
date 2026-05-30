@@ -19,7 +19,9 @@
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     html, body { height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; }
 
-    #app { display: flex; flex-direction: column; height: 100%; }
+    /* 100dvh tracks the *visible* viewport so the bottom controls aren't
+       hidden behind Safari's collapsing toolbar. Fallback to 100vh. */
+    #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 
     /* ── Top bar ── */
     #topbar {
@@ -36,8 +38,9 @@
     /* ── Bottom panel ── */
     #bottom-panel {
       background: var(--surface); border-top: 1px solid var(--border);
-      flex-shrink: 0; max-height: 58vh; overflow-y: auto;
+      flex-shrink: 0; max-height: 58dvh; overflow-y: auto;
       display: flex; flex-direction: column;
+      padding-bottom: env(safe-area-inset-bottom); /* clear home indicator */
     }
 
     /* ── Controls ── */
@@ -235,7 +238,7 @@ let routes = [], selectedIdx = 0, numCompare = 5;
 let polylines = [], routeLayer, elevChart;
 
 // ── Map ───────────────────────────────────────────────────────────────────────
-const map = L.map('map', { center: [HOME_LAT, HOME_LNG], zoom: 13 });
+const map = L.map('map', { center: [HOME_LAT, HOME_LNG], zoom: 11 });
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© <a href="https://openstreetmap.org/copyright">OSM</a>', maxZoom: 19
 }).addTo(map);
@@ -296,7 +299,10 @@ async function fetchRoute(key, meters, seed) {
       coordinates: [[HOME_LNG, HOME_LAT]],
       options: {
         round_trip: { length: meters, points: 5, seed },
-        avoid_features: ['highways', 'tollways', 'ferries']
+        // cycling profiles only accept 'ferries'/'steps' here — 'highways'
+        // is a driving-only feature and 400s the request. The cycling-road
+        // profile already weights quiet roads over busy arterials.
+        avoid_features: ['ferries']
       },
       elevation: true,
       instructions: false
@@ -344,7 +350,7 @@ async function generateRoutes() {
   document.getElementById('elev-section').style.display = 'none';
   document.getElementById('dl-section').style.display = 'none';
 
-  let done = 0;
+  let done = 0, lastErr = '';
   for (const seed of seeds) {
     done++;
     setStatus(`Fetching option ${done} of ${numCompare}…`);
@@ -365,12 +371,13 @@ async function generateRoutes() {
         score: aFt + (1 - circ) * aFt * 0.3,
       });
     } catch (e) {
+      lastErr = e.message;
       console.warn('seed', seed, e.message);
     }
   }
 
   setBusy(false);
-  if (!routes.length) { setStatus('All requests failed — check your API key.', 'err'); return; }
+  if (!routes.length) { setStatus(`All requests failed: ${lastErr || 'check your API key.'}`, 'err'); return; }
 
   routes.sort((a, b) => a.score - b.score);
   selectedIdx = 0;
