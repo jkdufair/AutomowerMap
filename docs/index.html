@@ -379,14 +379,46 @@ function circularity(coords) {
   return Math.min(maxD, idealR) / Math.max(maxD, idealR);
 }
 
+// Ascent/descent (metres) computed directly from 3D geometry — used as a
+// fallback when the ORS summary omits ascent/descent (which yields NaN).
+// Returns null when the geometry carries no elevation (2D coords).
+function elevFromGeometry(coords) {
+  if (!coords.length || coords[0].length < 3) return null;
+  let gain = 0, loss = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const d = coords[i][2] - coords[i - 1][2];
+    if (d > 0) gain += d; else loss -= d;
+  }
+  return { ascent: gain, descent: loss };
+}
+
 // ── Generate ──────────────────────────────────────────────────────────────────
+
+// ORS round_trip overshoots the requested length (often 2-3x). Drive the
+// *actual* length toward the target by rescaling the request and retrying,
+// keeping whichever attempt lands closest.
+async function fetchConstrained(key, targetM, seed, onTry) {
+  let reqLen = targetM, best = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (onTry) onTry(attempt);
+    const gj     = await fetchRoute(key, Math.round(reqLen), seed);
+    const f      = gj.features[0];
+    const actual = f.properties.summary.distance;
+    if (!best || Math.abs(actual - targetM) < Math.abs(best.actual - targetM)) best = { f, actual };
+    const err = actual / targetM;                       // >1 = too long
+    if (Math.abs(err - 1) <= 0.08) break;               // within 8% — good enough
+    reqLen = Math.max(targetM * 0.25, Math.min(targetM * 2, reqLen / err));
+  }
+  return best.f;
+}
+
 async function generateRoutes() {
   const key = loadKey();
   if (!key) { setStatus('Tap ⚙︎ to add your API key first.', 'err'); openSettings(); return; }
 
-  const miles  = parseInt(document.getElementById('dist-slider').value);
-  const meters = Math.round(miles * 1609.344);
-  const seeds  = Array.from({ length: numCompare }, (_, i) => i * 17 + 3);
+  const miles   = parseInt(document.getElementById('dist-slider').value);
+  const targetM = miles * 1609.344;
+  const seeds   = Array.from({ length: numCompare }, (_, i) => i * 17 + 3);
 
   routes = []; polylines = []; selectedIdx = 0;
   setBusy(true);
@@ -399,22 +431,33 @@ async function generateRoutes() {
   let done = 0, lastErr = '';
   for (const seed of seeds) {
     done++;
-    setStatus(`Fetching option ${done} of ${numCompare}…`);
     try {
-      const gj      = await fetchRoute(key, meters, seed);
-      const feature = gj.features[0];
-      const s       = feature.properties.summary;
-      const coords  = feature.geometry.coordinates;
-      const aFt     = s.ascent * 3.28084;
+      const feature = await fetchConstrained(key, targetM, seed, (attempt) =>
+        setStatus(`Fetching option ${done} of ${numCompare}${attempt ? ' (tuning length…)' : ''}`));
+      const s      = feature.properties.summary;
+      const coords = feature.geometry.coordinates;
+
+      // Robust elevation: prefer summary, fall back to geometry, else mark n/a
+      let ascentM = s.ascent, descentM = s.descent;
+      if (!Number.isFinite(ascentM)) {
+        const e  = elevFromGeometry(coords);
+        ascentM  = e ? e.ascent  : NaN;
+        descentM = e ? e.descent : NaN;
+      }
+      const aFt     = ascentM * 3.28084;
+      const hasElev = Number.isFinite(aFt);
       const circ    = circularity(coords);
+
       routes.push({
         feature, seed,
-        distMi:   s.distance / 1609.344,
-        ascentFt: aFt,
-        descentFt: s.descent * 3.28084,
+        distMi:    s.distance / 1609.344,
+        ascentFt:  aFt,
+        descentFt: descentM * 3.28084,
+        hasElev,
         durationS: s.duration,
         circ,
-        score: aFt + (1 - circ) * aFt * 0.3,
+        // Rank by flatness + circularity. Without elevation, rank circularity only.
+        score: (hasElev ? aFt : 0) + (1 - circ) * (hasElev ? aFt : 1000) * 0.3,
       });
     } catch (e) {
       lastErr = e.message;
@@ -424,6 +467,10 @@ async function generateRoutes() {
 
   setBusy(false);
   if (!routes.length) { setStatus(`All requests failed: ${lastErr || 'check your API key.'}`, 'err'); return; }
+
+  // Keep only routes within ±15% of the target distance, if any qualify.
+  const onTarget = routes.filter(r => Math.abs(r.distMi / miles - 1) <= 0.15);
+  if (onTarget.length) routes = onTarget;
 
   routes.sort((a, b) => a.score - b.score);
   selectedIdx = 0;
@@ -470,7 +517,7 @@ function buildRouteCards() {
     card.innerHTML = `
       <div class="rc-dot" style="background:${color}">${i+1}</div>
       <div class="rc-dist">${r.distMi.toFixed(1)} mi</div>
-      <div class="rc-gain">+${Math.round(r.ascentFt)} ft</div>
+      <div class="rc-gain">${r.hasElev ? '+' + Math.round(r.ascentFt) + ' ft' : 'elev n/a'}</div>
       <div class="rc-tag" style="color:${color}">${tag}</div>`;
     card.onclick = () => selectRoute(i);
     list.appendChild(card);
@@ -510,7 +557,7 @@ function showSelected() {
 
   document.getElementById('s-dist').textContent  = r.distMi.toFixed(1);
   document.getElementById('s-dist').style.color  = color;
-  document.getElementById('s-up').textContent    = `+${Math.round(r.ascentFt)}ft`;
+  document.getElementById('s-up').textContent    = r.hasElev ? `+${Math.round(r.ascentFt)}ft` : 'n/a';
   document.getElementById('s-up').style.color    = color;
   document.getElementById('s-time').textContent  = fmtTime(r.durationS);
   document.getElementById('s-time').style.color  = color;
@@ -525,8 +572,9 @@ function showSelected() {
   }
   document.getElementById('dl-section').style.display = 'block';
 
-  const note = selectedIdx === 0 ? ' — flattest + most circular' : '';
-  setStatus(`Route ${selectedIdx + 1} of ${routes.length}: ${r.distMi.toFixed(1)} mi · +${Math.round(r.ascentFt)} ft${note}`, 'ok');
+  const elevTxt = r.hasElev ? ` · +${Math.round(r.ascentFt)} ft` : '';
+  const note    = selectedIdx === 0 ? ' — flattest + most circular' : '';
+  setStatus(`Route ${selectedIdx + 1} of ${routes.length}: ${r.distMi.toFixed(1)} mi${elevTxt}${note}`, 'ok');
 }
 
 // ── Elevation chart ───────────────────────────────────────────────────────────
