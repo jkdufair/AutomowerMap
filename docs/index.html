@@ -12,8 +12,6 @@
       --bg:      #111827;
       --surface: #1f2937;
       --border:  #374151;
-      --teal:    #34d399;
-      --teal-dk: #059669;
       --text:    #f3f4f6;
       --muted:   #9ca3af;
       --red:     #f87171;
@@ -21,107 +19,107 @@
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     html, body { height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; }
 
-    /* ── Layout ── */
     #app { display: flex; flex-direction: column; height: 100%; }
 
+    /* ── Top bar ── */
     #topbar {
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      padding: 12px 16px;
-      display: flex; align-items: center; gap: 10px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 11px 16px; display: flex; align-items: center; gap: 10px;
       flex-shrink: 0; z-index: 10;
     }
-    #topbar h1 { font-size: 1rem; font-weight: 700; color: var(--teal); flex: 1; }
+    #topbar h1 { font-size: 1rem; font-weight: 700; color: #34d399; flex: 1; }
+    #gear-btn { background: none; border: none; color: var(--muted); font-size: 1.4rem; cursor: pointer; padding: 4px; line-height: 1; }
 
-    #gear-btn {
-      background: none; border: none; color: var(--muted);
-      font-size: 1.4rem; cursor: pointer; padding: 4px; line-height: 1;
-    }
-
+    /* ── Map ── */
     #map { flex: 1; min-height: 0; }
 
+    /* ── Bottom panel ── */
     #bottom-panel {
-      background: var(--surface);
-      border-top: 1px solid var(--border);
-      flex-shrink: 0;
-      max-height: 55vh;
-      overflow-y: auto;
+      background: var(--surface); border-top: 1px solid var(--border);
+      flex-shrink: 0; max-height: 58vh; overflow-y: auto;
+      display: flex; flex-direction: column;
     }
 
     /* ── Controls ── */
-    #controls { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
-
+    #controls { padding: 13px 16px 10px; display: flex; flex-direction: column; gap: 11px; flex-shrink: 0; }
     .row { display: flex; align-items: center; gap: 10px; }
-
-    .dist-label {
-      font-size: 1rem; font-weight: 700; color: var(--teal);
-      min-width: 60px; text-align: right;
-    }
-
+    .dist-label { font-size: 1rem; font-weight: 700; color: #34d399; min-width: 56px; text-align: right; }
     input[type=range] {
       flex: 1; -webkit-appearance: none; height: 6px;
       background: var(--border); border-radius: 3px; outline: none;
     }
     input[type=range]::-webkit-slider-thumb {
       -webkit-appearance: none; width: 26px; height: 26px;
-      background: var(--teal); border-radius: 50%; cursor: pointer;
+      background: #34d399; border-radius: 50%; cursor: pointer;
       box-shadow: 0 2px 6px rgba(0,0,0,.4);
     }
     input[type=range]::-moz-range-thumb {
-      width: 26px; height: 26px; background: var(--teal);
+      width: 26px; height: 26px; background: #34d399;
       border-radius: 50%; cursor: pointer; border: none;
     }
-
     .btn-row { display: flex; gap: 8px; }
-
     button.primary {
-      flex: 1; background: var(--teal); color: #111;
-      border: none; border-radius: 10px; padding: 14px;
-      font-size: 1rem; font-weight: 700; cursor: pointer;
+      flex: 1; background: #34d399; color: #111; border: none;
+      border-radius: 10px; padding: 13px; font-size: 1rem; font-weight: 700; cursor: pointer;
     }
-    button.primary:active { background: var(--teal-dk); }
-    button.primary:disabled { background: #2d5a4a; color: #1a3d31; cursor: not-allowed; }
-
-    button.ghost {
-      flex: 1; background: none; border: 2px solid var(--teal); color: var(--teal);
-      border-radius: 10px; padding: 14px;
-      font-size: 1rem; font-weight: 700; cursor: pointer;
-    }
-    button.ghost:active { background: #0f2d22; }
-    button.ghost:disabled { border-color: #2d5a4a; color: #2d5a4a; cursor: not-allowed; }
+    button.primary:active { background: #059669; }
+    button.primary:disabled { background: #1f4d39; color: #0f2c22; cursor: not-allowed; }
 
     /* ── Status ── */
-    #status {
-      padding: 8px 16px 0; font-size: 0.85rem; color: var(--muted);
-      min-height: 28px; line-height: 1.4;
-    }
+    #status { padding: 6px 16px 4px; font-size: 0.83rem; color: var(--muted); min-height: 26px; line-height: 1.4; flex-shrink: 0; }
     #status.err { color: var(--red); }
-    #status.ok  { color: var(--teal); }
+    #status.ok  { color: #34d399; }
+
+    /* ── Route cards ── */
+    #route-list {
+      display: none; flex-direction: row; gap: 8px;
+      padding: 8px 16px 10px; overflow-x: auto;
+      -webkit-overflow-scrolling: touch; scroll-snap-type: x mandatory;
+      flex-shrink: 0; border-bottom: 1px solid var(--border);
+    }
+    #route-list::-webkit-scrollbar { display: none; }
+
+    .route-card {
+      flex-shrink: 0; width: 100px; scroll-snap-align: start;
+      background: var(--bg); border: 2px solid var(--border);
+      border-radius: 10px; padding: 9px 10px; cursor: pointer;
+    }
+    .route-card.active { background: rgba(52,211,153,.08); }
+
+    .rc-dot {
+      width: 20px; height: 20px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.7rem; font-weight: 800; color: #111; margin-bottom: 7px;
+    }
+    .rc-dist { font-size: 1rem; font-weight: 700; line-height: 1; }
+    .rc-gain { font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
+    .rc-tag  { font-size: 0.65rem; margin-top: 5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 
     /* ── Stats ── */
     #stats-row {
-      display: grid; grid-template-columns: repeat(4, 1fr);
-      gap: 1px; background: var(--border);
-      border-top: 1px solid var(--border); margin-top: 10px;
+      display: none; grid-template-columns: repeat(3, 1fr);
+      gap: 1px; background: var(--border); flex-shrink: 0;
     }
-    .stat-cell {
-      background: var(--surface);
-      padding: 10px 6px; text-align: center;
-    }
-    .stat-cell .sv { font-size: 1rem; font-weight: 700; color: var(--teal); }
-    .stat-cell .sl { font-size: 0.68rem; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: .04em; }
+    .stat-cell { background: var(--surface); padding: 9px 6px; text-align: center; }
+    .stat-cell .sv { font-size: 1rem; font-weight: 700; }
+    .stat-cell .sl { font-size: 0.67rem; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: .04em; }
 
     /* ── Elevation chart ── */
-    #elev-section { padding: 12px 16px 4px; display: none; }
-    #elev-section h3 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 8px; }
-    #chart-wrap { height: 100px; position: relative; }
+    #elev-section { display: none; padding: 10px 16px 4px; flex-shrink: 0; }
+    #elev-section h3 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 7px; }
+    #chart-wrap { height: 90px; position: relative; }
 
     /* ── Download ── */
-    #dl-section { padding: 10px 16px 16px; display: none; }
+    #dl-section { display: none; padding: 10px 16px 16px; flex-shrink: 0; }
+    #dl-section button {
+      width: 100%; background: none; border: 2px solid #34d399; color: #34d399;
+      border-radius: 10px; padding: 13px; font-size: 1rem; font-weight: 700; cursor: pointer;
+    }
+    #dl-section button:active { background: #0f2d22; }
 
-    /* ── Settings overlay ── */
+    /* ── Settings sheet ── */
     #settings-overlay {
-      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7);
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.72);
       z-index: 100; align-items: flex-end; justify-content: center;
     }
     #settings-overlay.open { display: flex; }
@@ -133,32 +131,30 @@
     #settings-sheet label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; }
     #settings-sheet input[type=text] {
       width: 100%; background: var(--bg); border: 1px solid var(--border);
-      border-radius: 8px; color: var(--text); padding: 12px; font-size: 0.9rem;
-      font-family: monospace; outline: none;
+      border-radius: 8px; color: var(--text); padding: 12px;
+      font-size: 0.9rem; font-family: monospace; outline: none;
     }
-    #settings-sheet input[type=text]:focus { border-color: var(--teal); }
-    #settings-sheet a { color: var(--teal); font-size: 0.8rem; text-decoration: none; }
+    #settings-sheet input[type=text]:focus { border-color: #34d399; }
+    #settings-sheet a { color: #34d399; font-size: 0.8rem; }
     #settings-sheet p { font-size: 0.78rem; color: var(--muted); margin-top: 8px; line-height: 1.5; }
 
-    .sheet-close {
-      display: block; margin-top: 18px; width: 100%;
-      background: var(--teal); color: #111; border: none;
-      border-radius: 10px; padding: 14px; font-size: 1rem; font-weight: 700; cursor: pointer;
-    }
-
-    /* ── Compare selector ── */
     .compare-row { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
     .compare-row label { font-size: 0.82rem; color: var(--muted); }
     .seg-ctrl { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
     .seg-ctrl button {
       flex: 1; background: none; border: none; color: var(--muted);
-      padding: 8px 12px; font-size: 0.85rem; cursor: pointer;
+      padding: 9px 14px; font-size: 0.9rem; cursor: pointer;
     }
-    .seg-ctrl button.active { background: var(--teal); color: #111; font-weight: 700; }
+    .seg-ctrl button.active { background: #34d399; color: #111; font-weight: 700; }
 
-    /* ── Spinner ── */
+    .sheet-close {
+      display: block; margin-top: 18px; width: 100%;
+      background: #34d399; color: #111; border: none;
+      border-radius: 10px; padding: 14px; font-size: 1rem; font-weight: 700; cursor: pointer;
+    }
+
     @keyframes spin { to { transform: rotate(360deg); } }
-    .spin { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--teal); border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-left: 6px; }
+    .spin { display: inline-block; width: 16px; height: 16px; border: 2px solid #34d399; border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-left: 6px; }
   </style>
 </head>
 <body>
@@ -177,20 +173,21 @@
         <input type="range" id="dist-slider" min="10" max="70" step="5" value="30" oninput="updateDistLabel()">
         <span class="dist-label" id="dist-label">30 mi</span>
       </div>
-
       <div class="btn-row">
-        <button class="primary" id="gen-btn" onclick="generateRoutes()">Generate Route</button>
-        <button class="ghost"   id="next-btn" onclick="showNext()" disabled>Next Option</button>
+        <button class="primary" id="gen-btn" onclick="generateRoutes()">Generate Routes</button>
       </div>
     </div>
 
-    <div id="status">Tap ⚙︎ to enter your API key, then Generate.</div>
+    <div id="status">Tap ⚙︎ to enter your API key, then Generate Routes.</div>
 
-    <div id="stats-row" style="display:none">
+    <!-- All route options as tappable cards -->
+    <div id="route-list"></div>
+
+    <!-- Stats for selected route -->
+    <div id="stats-row">
       <div class="stat-cell"><div class="sv" id="s-dist">—</div><div class="sl">Miles</div></div>
-      <div class="stat-cell"><div class="sv" id="s-up">—</div><div class="sl">Gain</div></div>
+      <div class="stat-cell"><div class="sv" id="s-up">—</div>  <div class="sl">Elev Gain</div></div>
       <div class="stat-cell"><div class="sv" id="s-time">—</div><div class="sl">Est Time</div></div>
-      <div class="stat-cell"><div class="sv" id="s-rank">—</div><div class="sl">Rank</div></div>
     </div>
 
     <div id="elev-section">
@@ -199,7 +196,7 @@
     </div>
 
     <div id="dl-section">
-      <button class="ghost" style="width:100%" onclick="downloadGPX()">⬇ Download GPX → import to Ride with GPS</button>
+      <button onclick="downloadGPX()">⬇ Download GPX → import to Ride with GPS</button>
     </div>
   </div>
 </div>
@@ -210,18 +207,16 @@
     <h2>Settings</h2>
     <label for="key-input">OpenRouteService API Key</label>
     <input type="text" id="key-input" placeholder="Paste your free key here" oninput="saveKey()">
-    <p>Free key (2,000 routes/day, no card required):<br>
+    <p>Free key — 2,000 routes/day, no card required:<br>
        <a href="https://openrouteservice.org/dev/#/signup" target="_blank">openrouteservice.org/dev/#/signup →</a></p>
-
     <div class="compare-row">
-      <label>Compare routes</label>
+      <label>Compare</label>
       <div class="seg-ctrl" id="compare-ctrl">
-        <button onclick="setCompare(3,this)">3</button>
-        <button onclick="setCompare(5,this)" class="active">5</button>
-        <button onclick="setCompare(8,this)">8</button>
+        <button onclick="setCompare(3,this)">3 routes</button>
+        <button onclick="setCompare(5,this)" class="active">5 routes</button>
+        <button onclick="setCompare(8,this)">8 routes</button>
       </div>
     </div>
-
     <button class="sheet-close" onclick="closeSettings()">Done</button>
   </div>
 </div>
@@ -231,23 +226,26 @@
 const HOME_LAT = 42.6074567;
 const HOME_LNG = -76.9277306;
 
+const ROUTE_COLORS = ['#34d399','#60a5fa','#fbbf24','#c084fc','#fb7185','#2dd4bf','#fb923c','#e879f9'];
+
 // ── State ─────────────────────────────────────────────────────────────────────
-let routes = [], idx = 0, numCompare = 5;
-let routeLayer, elevChart, currentFeature = null;
+let routes = [], selectedIdx = 0, numCompare = 5;
+let polylines = [], routeLayer, elevChart;
 
 // ── Map ───────────────────────────────────────────────────────────────────────
-const map = L.map('map', { center: [HOME_LAT, HOME_LNG], zoom: 13, zoomControl: true });
+const map = L.map('map', { center: [HOME_LAT, HOME_LNG], zoom: 13 });
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© <a href="https://openstreetmap.org/copyright">OSM</a>',
-  maxZoom: 19
+  attribution: '© <a href="https://openstreetmap.org/copyright">OSM</a>', maxZoom: 19
 }).addTo(map);
 
-const homeIcon = L.divIcon({
-  className: '',
-  html: '<div style="width:14px;height:14px;background:#34d399;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.6)"></div>',
-  iconSize: [14,14], iconAnchor: [7,7]
-});
-L.marker([HOME_LAT, HOME_LNG], { icon: homeIcon }).addTo(map).bindPopup('<b>Home</b>');
+L.marker([HOME_LAT, HOME_LNG], {
+  icon: L.divIcon({
+    className: '',
+    html: '<div style="width:14px;height:14px;background:#34d399;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.6)"></div>',
+    iconSize: [14,14], iconAnchor: [7,7]
+  })
+}).addTo(map).bindPopup('<b>Home</b>');
+
 routeLayer = L.layerGroup().addTo(map);
 
 // ── Settings ──────────────────────────────────────────────────────────────────
@@ -256,17 +254,13 @@ function saveKey()    { const k = document.getElementById('key-input').value.tri
 function openSettings()  { document.getElementById('settings-overlay').classList.add('open'); document.getElementById('key-input').value = loadKey(); }
 function closeSettings() { document.getElementById('settings-overlay').classList.remove('open'); }
 function maybeCloseSettings(e) { if (e.target === document.getElementById('settings-overlay')) closeSettings(); }
-
 function setCompare(n, btn) {
   numCompare = n;
   document.querySelectorAll('#compare-ctrl button').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
 }
-
-// Load saved key on page open
 document.getElementById('key-input').value = loadKey();
 
-// ── Distance slider ───────────────────────────────────────────────────────────
 function updateDistLabel() {
   document.getElementById('dist-label').textContent = document.getElementById('dist-slider').value + ' mi';
 }
@@ -277,16 +271,13 @@ function setStatus(msg, cls = '') {
   el.innerHTML = msg;
   el.className = cls;
 }
-
 function setBusy(busy) {
-  const g = document.getElementById('gen-btn');
-  const n = document.getElementById('next-btn');
-  g.disabled = busy;
-  n.disabled = busy || routes.length <= 1;
-  g.innerHTML = busy ? 'Finding routes… <span class="spin"></span>' : 'Generate Route';
+  const btn = document.getElementById('gen-btn');
+  btn.disabled = busy;
+  btn.innerHTML = busy ? 'Finding routes… <span class="spin"></span>' : 'Generate Routes';
 }
 
-// ── API ───────────────────────────────────────────────────────────────────────
+// ── ORS API ───────────────────────────────────────────────────────────────────
 async function fetchRoute(key, meters, seed) {
   const res = await fetch('https://api.openrouteservice.org/v2/directions/cycling-road/geojson', {
     method: 'POST',
@@ -308,26 +299,22 @@ async function fetchRoute(key, meters, seed) {
   return res.json();
 }
 
-// ── Circularity ───────────────────────────────────────────────────────────────
+// ── Scoring ───────────────────────────────────────────────────────────────────
 function circularity(coords) {
   if (coords.length < 2) return 0;
-  const maxDist = Math.max(...coords.map(c => {
+  const maxD = Math.max(...coords.map(c => {
     const dx = (c[0] - HOME_LNG) * Math.cos(HOME_LAT * Math.PI / 180) * 111.32;
     const dy = (c[1] - HOME_LAT) * 111.32;
     return Math.sqrt(dx*dx + dy*dy);
   }));
-  let totalKm = 0;
+  let km = 0;
   for (let i = 1; i < coords.length; i++) {
-    const dx = (coords[i][0] - coords[i-1][0]) * Math.cos(HOME_LAT * Math.PI / 180) * 111.32;
-    const dy = (coords[i][1] - coords[i-1][1]) * 111.32;
-    totalKm += Math.sqrt(dx*dx + dy*dy);
+    const dx = (coords[i][0]-coords[i-1][0]) * Math.cos(HOME_LAT*Math.PI/180) * 111.32;
+    const dy = (coords[i][1]-coords[i-1][1]) * 111.32;
+    km += Math.sqrt(dx*dx + dy*dy);
   }
-  const idealR = totalKm / (2 * Math.PI);
-  return Math.min(maxDist, idealR) / Math.max(maxDist, idealR);
-}
-
-function score(ascentFt, circ) {
-  return ascentFt + (1 - circ) * ascentFt * 0.3;
+  const idealR = km / (2 * Math.PI);
+  return Math.min(maxD, idealR) / Math.max(maxD, idealR);
 }
 
 // ── Generate ──────────────────────────────────────────────────────────────────
@@ -339,32 +326,33 @@ async function generateRoutes() {
   const meters = Math.round(miles * 1609.344);
   const seeds  = Array.from({ length: numCompare }, (_, i) => i * 17 + 3);
 
-  routes = []; idx = 0;
+  routes = []; polylines = []; selectedIdx = 0;
   setBusy(true);
   routeLayer.clearLayers();
-  document.getElementById('stats-row').style.display   = 'none';
+  document.getElementById('route-list').style.display = 'none';
+  document.getElementById('stats-row').style.display  = 'none';
   document.getElementById('elev-section').style.display = 'none';
-  document.getElementById('dl-section').style.display   = 'none';
+  document.getElementById('dl-section').style.display = 'none';
 
   let done = 0;
   for (const seed of seeds) {
     done++;
-    setStatus(`Checking option ${done} of ${numCompare}…`);
+    setStatus(`Fetching option ${done} of ${numCompare}…`);
     try {
       const gj      = await fetchRoute(key, meters, seed);
       const feature = gj.features[0];
       const s       = feature.properties.summary;
       const coords  = feature.geometry.coordinates;
-      const ascentFt = s.ascent * 3.28084;
-      const circ     = circularity(coords);
+      const aFt     = s.ascent * 3.28084;
+      const circ    = circularity(coords);
       routes.push({
         feature, seed,
         distMi:   s.distance / 1609.344,
-        ascentFt,
+        ascentFt: aFt,
         descentFt: s.descent * 3.28084,
         durationS: s.duration,
         circ,
-        score:     score(ascentFt, circ),
+        score: aFt + (1 - circ) * aFt * 0.3,
       });
     } catch (e) {
       console.warn('seed', seed, e.message);
@@ -372,59 +360,117 @@ async function generateRoutes() {
   }
 
   setBusy(false);
-
-  if (!routes.length) {
-    setStatus('All requests failed — check your API key.', 'err');
-    return;
-  }
+  if (!routes.length) { setStatus('All requests failed — check your API key.', 'err'); return; }
 
   routes.sort((a, b) => a.score - b.score);
-  idx = 0;
-  render();
+  selectedIdx = 0;
+  renderAll();
 }
 
-// ── Render ────────────────────────────────────────────────────────────────────
-function showNext() {
-  idx = (idx + 1) % routes.length;
-  render();
+// ── Draw all routes ───────────────────────────────────────────────────────────
+function renderAll() {
+  routeLayer.clearLayers();
+  polylines = [];
+
+  routes.forEach((r, i) => {
+    const color = ROUTE_COLORS[i % ROUTE_COLORS.length];
+    const isSelected = i === selectedIdx;
+    const ll = r.feature.geometry.coordinates.map(c => [c[1], c[0]]);
+    const pl = L.polyline(ll, {
+      color,
+      weight:  isSelected ? 5 : 2,
+      opacity: isSelected ? 0.95 : 0.3,
+    }).addTo(routeLayer);
+    pl.on('click', () => selectRoute(i));
+    if (isSelected) pl.bringToFront();
+    polylines.push(pl);
+  });
+
+  // Fit to all routes combined
+  const allLL = routes.flatMap(r => r.feature.geometry.coordinates.map(c => [c[1], c[0]]));
+  map.fitBounds(L.latLngBounds(allLL), { padding: [28, 28] });
+
+  buildRouteCards();
+  showSelected();
 }
 
+// ── Route cards ───────────────────────────────────────────────────────────────
+function buildRouteCards() {
+  const list = document.getElementById('route-list');
+  list.innerHTML = '';
+  routes.forEach((r, i) => {
+    const color = ROUTE_COLORS[i % ROUTE_COLORS.length];
+    const tag   = i === 0 ? 'Flattest' : i === 1 ? '2nd' : i === 2 ? '3rd' : `${i+1}th`;
+    const card  = document.createElement('div');
+    card.className = 'route-card' + (i === selectedIdx ? ' active' : '');
+    card.style.borderColor = i === selectedIdx ? color : 'var(--border)';
+    card.innerHTML = `
+      <div class="rc-dot" style="background:${color}">${i+1}</div>
+      <div class="rc-dist">${r.distMi.toFixed(1)} mi</div>
+      <div class="rc-gain">+${Math.round(r.ascentFt)} ft</div>
+      <div class="rc-tag" style="color:${color}">${tag}</div>`;
+    card.onclick = () => selectRoute(i);
+    list.appendChild(card);
+  });
+  list.style.display = 'flex';
+}
+
+// ── Select a route ────────────────────────────────────────────────────────────
+function selectRoute(i) {
+  selectedIdx = i;
+  const color = ROUTE_COLORS[i % ROUTE_COLORS.length];
+
+  // Update polyline styles
+  polylines.forEach((pl, j) => {
+    pl.setStyle({ weight: j === i ? 5 : 2, opacity: j === i ? 0.95 : 0.3 });
+    if (j === i) pl.bringToFront();
+  });
+
+  // Update cards
+  document.querySelectorAll('.route-card').forEach((el, j) => {
+    el.classList.toggle('active', j === i);
+    el.style.borderColor = j === i ? ROUTE_COLORS[j % ROUTE_COLORS.length] : 'var(--border)';
+  });
+
+  showSelected();
+}
+
+// ── Show stats for selected route ─────────────────────────────────────────────
 function fmtTime(s) {
   const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
-  return h ? `${h}h${m.toString().padStart(2,'0')}` : `${m}m`;
+  return h ? `${h}h ${m.toString().padStart(2,'0')}m` : `${m}m`;
 }
 
-function render() {
-  const r = routes[idx];
-  currentFeature = r.feature;
-  routeLayer.clearLayers();
-
-  const ll   = r.feature.geometry.coordinates.map(c => [c[1], c[0]]);
-  const poly = L.polyline(ll, { color: '#34d399', weight: 4, opacity: 0.9 }).addTo(routeLayer);
-  map.fitBounds(poly.getBounds(), { padding: [30, 30] });
+function showSelected() {
+  const r = routes[selectedIdx];
+  const color = ROUTE_COLORS[selectedIdx % ROUTE_COLORS.length];
 
   document.getElementById('s-dist').textContent  = r.distMi.toFixed(1);
+  document.getElementById('s-dist').style.color  = color;
   document.getElementById('s-up').textContent    = `+${Math.round(r.ascentFt)}ft`;
+  document.getElementById('s-up').style.color    = color;
   document.getElementById('s-time').textContent  = fmtTime(r.durationS);
-  document.getElementById('s-rank').textContent  = `${idx+1}/${routes.length}`;
+  document.getElementById('s-time').style.color  = color;
   document.getElementById('stats-row').style.display = 'grid';
 
   const coords = r.feature.geometry.coordinates;
-  if (coords[0].length >= 3) {
-    drawElevation(coords);
+  if (coords[0]?.length >= 3) {
+    drawElevation(coords, color);
     document.getElementById('elev-section').style.display = 'block';
+  } else {
+    document.getElementById('elev-section').style.display = 'none';
   }
   document.getElementById('dl-section').style.display = 'block';
-  document.getElementById('next-btn').disabled = routes.length <= 1;
 
-  const note = idx === 0 ? ' — flattest + most circular found' : '';
-  setStatus(`${r.distMi.toFixed(1)} mi · +${Math.round(r.ascentFt)} ft gain${note}`, 'ok');
+  const note = selectedIdx === 0 ? ' — flattest + most circular' : '';
+  setStatus(`Route ${selectedIdx + 1} of ${routes.length}: ${r.distMi.toFixed(1)} mi · +${Math.round(r.ascentFt)} ft${note}`, 'ok');
 }
 
 // ── Elevation chart ───────────────────────────────────────────────────────────
-function drawElevation(coords) {
-  const MAX = 150, step = Math.max(1, Math.floor(coords.length / MAX));
-  const pts = coords.filter((_, i) => i % step === 0);
+function drawElevation(coords, color) {
+  const MAX  = 150;
+  const step = Math.max(1, Math.floor(coords.length / MAX));
+  const pts  = coords.filter((_, i) => i % step === 0);
   let cum = 0;
   const xs = pts.map((c, i) => {
     if (i > 0) {
@@ -435,13 +481,14 @@ function drawElevation(coords) {
     return cum.toFixed(1);
   });
   const ys = pts.map(c => Math.round(c[2] * 3.28084));
+  const hex = color + '30'; // 18% alpha fill
 
   if (elevChart) elevChart.destroy();
   elevChart = new Chart(document.getElementById('elev-canvas').getContext('2d'), {
     type: 'line',
     data: {
       labels: xs,
-      datasets: [{ data: ys, borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,.15)',
+      datasets: [{ data: ys, borderColor: color, backgroundColor: hex,
         borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.3 }]
     },
     options: {
@@ -459,9 +506,8 @@ function drawElevation(coords) {
 
 // ── GPX export ────────────────────────────────────────────────────────────────
 function downloadGPX() {
-  if (!currentFeature) return;
-  const r      = routes[idx];
-  const coords = currentFeature.geometry.coordinates;
+  const r      = routes[selectedIdx];
+  const coords = r.feature.geometry.coordinates;
   const name   = `Cycling ${r.distMi.toFixed(1)}mi (+${Math.round(r.ascentFt)}ft)`;
   const now    = new Date().toISOString();
 
@@ -481,11 +527,9 @@ ${trkpts}
 
   const a = Object.assign(document.createElement('a'), {
     href:     URL.createObjectURL(new Blob([gpx], { type: 'application/gpx+xml' })),
-    download: `cycling_${r.distMi.toFixed(0)}mi.gpx`
+    download: `cycling_${Math.round(r.distMi)}mi.gpx`
   });
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 </script>
 </body>
