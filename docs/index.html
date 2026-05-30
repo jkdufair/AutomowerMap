@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
   <title>Cycling Route Planner</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -17,11 +17,25 @@
       --red:     #f87171;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; }
 
-    /* 100dvh tracks the *visible* viewport so the bottom controls aren't
-       hidden behind Safari's collapsing toolbar. Fallback to 100vh. */
-    #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+    /* Lock the page to the viewport: no document scroll, no horizontal
+       overflow that would clip the title/controls at the edges. */
+    html, body {
+      height: 100%; width: 100%;
+      position: fixed; inset: 0; overflow: hidden;
+      background: var(--bg); color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    /* --app-height is set from JS to window.visualViewport.height so the
+       layout exactly fills the *visible* area, never hidden behind Safari's
+       toolbar. Falls back to 100dvh, then 100vh, on older browsers. */
+    #app {
+      display: flex; flex-direction: column;
+      width: 100%;
+      height: 100vh; height: 100dvh; height: var(--app-height, 100dvh);
+      overflow: hidden;
+    }
 
     /* ── Top bar ── */
     #topbar {
@@ -239,6 +253,19 @@ let polylines = [], routeLayer, elevChart;
 
 // ── Map ───────────────────────────────────────────────────────────────────────
 const map = L.map('map', { center: [HOME_LAT, HOME_LNG], zoom: 11 });
+
+// Frame the map to roughly the area a loop of `miles` will cover, centred
+// on home. A loop of distance D has radius ~D/(2π); real routes wander, so
+// we pad by 1.5x. Keeps the home dot centred with sensible context.
+function previewExtent(miles) {
+  const radiusMi  = (miles / (2 * Math.PI)) * 1.5;
+  const dLat      = radiusMi / 69;                                  // ~69 mi per ° lat
+  const dLng      = radiusMi / (69 * Math.cos(HOME_LAT * Math.PI / 180));
+  map.fitBounds([
+    [HOME_LAT - dLat, HOME_LNG - dLng],
+    [HOME_LAT + dLat, HOME_LNG + dLng],
+  ], { animate: false });
+}
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© <a href="https://openstreetmap.org/copyright">OSM</a>', maxZoom: 19
 }).addTo(map);
@@ -252,6 +279,19 @@ L.marker([HOME_LAT, HOME_LNG], {
 }).addTo(map).bindPopup('<b>Home</b>');
 
 routeLayer = L.layerGroup().addTo(map);
+
+// ── Visual-viewport height sync ───────────────────────────────────────────────
+// iOS Safari's toolbar overlaps the layout viewport; visualViewport.height is
+// the genuinely visible height. Sync it to a CSS var and re-layout the map.
+function setAppHeight() {
+  const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+  document.documentElement.style.setProperty('--app-height', h + 'px');
+  if (map) map.invalidateSize();
+}
+setAppHeight();
+window.addEventListener('resize', setAppHeight);
+window.addEventListener('orientationchange', () => setTimeout(setAppHeight, 200));
+if (window.visualViewport) window.visualViewport.addEventListener('resize', setAppHeight);
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 function loadKey()    { return localStorage.getItem('ors_key') || ''; }
@@ -275,8 +315,14 @@ function setCompare(n, btn) {
 document.getElementById('key-input').value = loadKey();
 
 function updateDistLabel() {
-  document.getElementById('dist-label').textContent = document.getElementById('dist-slider').value + ' mi';
+  const miles = parseInt(document.getElementById('dist-slider').value);
+  document.getElementById('dist-label').textContent = miles + ' mi';
+  // Only re-frame while no routes are drawn (otherwise keep the route in view)
+  if (!routes.length) previewExtent(miles);
 }
+
+// Frame the initial view to the default distance
+previewExtent(parseInt(document.getElementById('dist-slider').value));
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
 function setStatus(msg, cls = '') {
