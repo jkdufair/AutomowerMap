@@ -46,8 +46,39 @@
     #topbar h1 { font-size: 1rem; font-weight: 700; color: #34d399; flex: 1; }
     #gear-btn { background: none; border: none; color: var(--muted); font-size: 1.4rem; cursor: pointer; padding: 4px; line-height: 1; }
 
-    /* ── Map ── */
-    #map { flex: 1; min-height: 0; }
+    /* ── Map wrapper (holds map + placement overlays) ── */
+    #map-wrap { flex: 1; min-height: 0; position: relative; }
+    #map { height: 100%; }
+
+    /* ── Placement mode overlays ── */
+    #crosshair {
+      display: none; position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -100%);
+      z-index: 900; pointer-events: none;
+    }
+
+    #placement-bar {
+      display: none; position: absolute;
+      bottom: 0; left: 0; right: 0;
+      background: rgba(17,24,39,.93);
+      border-top: 1px solid var(--border);
+      padding: 12px 16px;
+      align-items: center; gap: 10px;
+      z-index: 1000;
+      padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    }
+    #placement-bar span { flex: 1; font-size: 0.85rem; color: var(--muted); }
+    #placement-bar button.confirm {
+      background: #34d399; color: #111; border: none;
+      border-radius: 8px; padding: 10px 20px;
+      font-size: 0.95rem; font-weight: 700; cursor: pointer;
+    }
+    #placement-bar button.cancel {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      border-radius: 8px; padding: 10px 14px;
+      font-size: 0.95rem; cursor: pointer;
+    }
 
     /* ── Bottom panel ── */
     #bottom-panel {
@@ -193,7 +224,22 @@
     <button id="gear-btn" onclick="openSettings()" title="Settings">⚙︎</button>
   </div>
 
-  <div id="map"></div>
+  <div id="map-wrap">
+    <div id="map"></div>
+    <!-- Placement mode: fixed pin at viewport centre -->
+    <div id="crosshair">
+      <svg viewBox="0 0 28 36" xmlns="http://www.w3.org/2000/svg" width="36" height="46"
+           style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))">
+        <path d="M14 0C6.27 0 0 6.27 0 14c0 9.6 14 22 14 22s14-12.4 14-22C28 6.27 21.73 0 14 0z" fill="#f97316"/>
+        <circle cx="14" cy="14" r="6" fill="#fff"/>
+      </svg>
+    </div>
+    <div id="placement-bar">
+      <span>Pan &amp; zoom to your start, then confirm</span>
+      <button class="cancel" onclick="cancelPlacement()">✕</button>
+      <button class="confirm" onclick="confirmPlacement()">Confirm</button>
+    </div>
+  </div>
 
   <div id="bottom-panel">
     <div id="controls">
@@ -204,6 +250,7 @@
       </div>
       <div class="start-row">
         <button id="loc-btn" onclick="useMyLocation()">📍 My location</button>
+        <button onclick="enterPlacementMode()">🗺 Set on map</button>
       </div>
       <div id="start-label">Tap the map or use My location to set start</div>
       <div class="btn-row">
@@ -276,12 +323,30 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 routeLayer = L.layerGroup().addTo(map);
 
-// Tap the map to place/move the start pin
-map.on('click', e => {
-  if (!document.getElementById('gen-btn').disabled || startLat === null) {
-    placeStart(e.latlng.lat, e.latlng.lng, coordLabel(e.latlng.lat, e.latlng.lng));
-  }
-});
+// ── Placement mode ────────────────────────────────────────────────────────────
+function enterPlacementMode() {
+  document.getElementById('bottom-panel').style.display = 'none';
+  document.getElementById('crosshair').style.display    = 'block';
+  document.getElementById('placement-bar').style.display = 'flex';
+  map.invalidateSize();
+}
+
+function confirmPlacement() {
+  const c = map.getCenter();
+  exitPlacementMode();
+  placeStart(c.lat, c.lng, coordLabel(c.lat, c.lng));
+}
+
+function cancelPlacement() {
+  exitPlacementMode();
+}
+
+function exitPlacementMode() {
+  document.getElementById('bottom-panel').style.display = 'flex';
+  document.getElementById('crosshair').style.display    = 'none';
+  document.getElementById('placement-bar').style.display = 'none';
+  map.invalidateSize();
+}
 
 // ── Start marker ──────────────────────────────────────────────────────────────
 const startIcon = () => L.divIcon({
@@ -298,12 +363,8 @@ const startIcon = () => L.divIcon({
 function placeStart(lat, lng, label) {
   if (!startMarker) {
     startMarker = L.marker([lat, lng], {
-      icon: startIcon(), draggable: true, zIndexOffset: 1000
+      icon: startIcon(), draggable: false, zIndexOffset: 1000
     }).addTo(map).bindPopup('<b>Start / Finish</b>');
-    startMarker.on('dragend', () => {
-      const ll = startMarker.getLatLng();
-      setStart(ll.lat, ll.lng, coordLabel(ll.lat, ll.lng));
-    });
   } else {
     startMarker.setLatLng([lat, lng]);
   }
