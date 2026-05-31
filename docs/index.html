@@ -492,28 +492,58 @@ function setBusy(busy) {
 }
 
 // ── ORS API ───────────────────────────────────────────────────────────────────
+const NETWORK_TIMEOUT_MS = 20000;
+
 async function fetchRoute(key, meters, seed) {
-  const res = await fetch('https://api.openrouteservice.org/v2/directions/cycling-road/geojson', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': key },
-    body: JSON.stringify({
-      coordinates: [[startLng, startLat]],
-      options: {
-        round_trip: { length: meters, points: 5, seed },
-        // cycling profiles only accept 'ferries'/'steps' here — 'highways'
-        // is a driving-only feature and 400s the request. The cycling-road
-        // profile already weights quiet roads over busy arterials.
-        avoid_features: ['ferries']
-      },
-      elevation: true,
-      instructions: false
-    })
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error?.message || `HTTP ${res.status}`);
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), NETWORK_TIMEOUT_MS);
+  try {
+    const res = await fetch('https://api.openrouteservice.org/v2/directions/cycling-road/geojson', {
+      method: 'POST',
+      signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', 'Authorization': key },
+      body: JSON.stringify({
+        coordinates: [[startLng, startLat]],
+        options: {
+          round_trip: { length: meters, points: 5, seed },
+          avoid_features: ['ferries']
+        },
+        elevation: true,
+        instructions: false
+      })
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      // HTTP errors (400 bad key, 429 rate limit) — do NOT retry
+      const err = new Error(body.error?.message || `HTTP ${res.status}`);
+      err.isApiError = true;
+      throw err;
+    }
+    return res.json();
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('Request timed out — slow connection?');
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
+}
+
+// Retry network failures up to `maxRetries` times with exponential backoff.
+// API errors (4xx) are not retried — they won't self-heal.
+async function fetchRouteWithRetry(key, meters, seed, maxRetries = 2) {
+  let lastErr;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fetchRoute(key, meters, seed);
+    } catch (e) {
+      lastErr = e;
+      if (e.isApiError) throw e;                          // don't retry 400/401/429
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 800 * (attempt + 1)));  // 0.8s, 1.6s
+      }
+    }
+  }
+  throw lastErr;
 }
 
 // ── Scoring ───────────────────────────────────────────────────────────────────
@@ -564,7 +594,7 @@ async function fetchConstrained(key, aimM, minM, maxM, seed, onTry) {
   let reqLen = aimM, best = null, calls = 0;
   for (let attempt = 0; attempt < 5; attempt++) {
     if (onTry) onTry(attempt);
-    const gj     = await fetchRoute(key, Math.round(reqLen), seed);
+    const gj     = await fetchRouteWithRetry(key, Math.round(reqLen), seed);
     calls++;
     const f      = gj.features[0];
     const actual = f.properties.summary.distance;
