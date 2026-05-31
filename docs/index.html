@@ -171,6 +171,19 @@
 
     @keyframes spin { to { transform: rotate(360deg); } }
     .spin { display: inline-block; width: 16px; height: 16px; border: 2px solid #34d399; border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-left: 6px; }
+
+    /* ── Start-point controls ── */
+    .start-row { display: flex; gap: 8px; }
+    .start-row button {
+      flex: 1; background: none; border: 1px solid var(--border); color: var(--muted);
+      border-radius: 8px; padding: 9px 8px; font-size: 0.82rem; cursor: pointer;
+      white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 5px;
+    }
+    .start-row button:active { background: #374151; }
+    .start-row button.locating { border-color: #34d399; color: #34d399; }
+    #start-label {
+      font-size: 0.75rem; color: var(--muted); text-align: center; padding: 2px 0 4px;
+    }
   </style>
 </head>
 <body>
@@ -189,6 +202,11 @@
         <input type="range" id="dist-slider" min="10" max="70" step="5" value="30" oninput="updateDistLabel()">
         <span class="dist-label" id="dist-label">30 mi</span>
       </div>
+      <div class="start-row">
+        <button id="loc-btn" onclick="useMyLocation()">📍 My location</button>
+        <button onclick="resetToHome()">🏠 Home</button>
+      </div>
+      <div id="start-label">Start: Home</div>
       <div class="btn-row">
         <button class="primary" id="gen-btn" onclick="generateRoutes()">Generate Routes</button>
       </div>
@@ -250,6 +268,7 @@ const ROUTE_COLORS = ['#34d399','#60a5fa','#fbbf24','#c084fc','#fb7185','#2dd4bf
 // ── State ─────────────────────────────────────────────────────────────────────
 let routes = [], selectedIdx = 0, numCompare = 5;
 let polylines = [], routeLayer, elevChart;
+let startLat = HOME_LAT, startLng = HOME_LNG;
 
 // ── Map ───────────────────────────────────────────────────────────────────────
 const map = L.map('map', { center: [HOME_LAT, HOME_LNG], zoom: 11 });
@@ -258,25 +277,94 @@ const map = L.map('map', { center: [HOME_LAT, HOME_LNG], zoom: 11 });
 // on home. A loop of distance D has radius ~D/(2π); real routes wander, so
 // we pad by 1.5x. Keeps the home dot centred with sensible context.
 function previewExtent(miles) {
-  const radiusMi  = (miles / (2 * Math.PI)) * 1.5;
-  const dLat      = radiusMi / 69;                                  // ~69 mi per ° lat
-  const dLng      = radiusMi / (69 * Math.cos(HOME_LAT * Math.PI / 180));
+  const radiusMi = (miles / (2 * Math.PI)) * 1.5;
+  const dLat     = radiusMi / 69;
+  const dLng     = radiusMi / (69 * Math.cos(startLat * Math.PI / 180));
   map.fitBounds([
-    [HOME_LAT - dLat, HOME_LNG - dLng],
-    [HOME_LAT + dLat, HOME_LNG + dLng],
+    [startLat - dLat, startLng - dLng],
+    [startLat + dLat, startLng + dLng],
   ], { animate: false });
 }
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© <a href="https://openstreetmap.org/copyright">OSM</a>', maxZoom: 19
 }).addTo(map);
 
+// Fixed home reference dot (green)
 L.marker([HOME_LAT, HOME_LNG], {
   icon: L.divIcon({
     className: '',
-    html: '<div style="width:14px;height:14px;background:#34d399;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.6)"></div>',
-    iconSize: [14,14], iconAnchor: [7,7]
+    html: '<div style="width:12px;height:12px;background:#34d399;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5);opacity:.6"></div>',
+    iconSize: [12,12], iconAnchor: [6,6]
   })
 }).addTo(map).bindPopup('<b>Home</b>');
+
+// Draggable start marker (orange pin)
+const startIcon = () => L.divIcon({
+  className: '',
+  html: `<div style="position:relative;width:28px;height:36px">
+    <svg viewBox="0 0 28 36" xmlns="http://www.w3.org/2000/svg" style="width:28px;height:36px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))">
+      <path d="M14 0C6.27 0 0 6.27 0 14c0 9.6 14 22 14 22s14-12.4 14-22C28 6.27 21.73 0 14 0z" fill="#f97316"/>
+      <circle cx="14" cy="14" r="6" fill="#fff"/>
+    </svg>
+  </div>`,
+  iconSize: [28,36], iconAnchor: [14,36], popupAnchor: [0,-36]
+});
+
+const startMarker = L.marker([startLat, startLng], {
+  icon: startIcon(), draggable: true, zIndexOffset: 1000
+}).addTo(map).bindPopup('<b>Start</b>');
+
+startMarker.on('dragend', () => {
+  const ll = startMarker.getLatLng();
+  setStart(ll.lat, ll.lng, coordLabel(ll.lat, ll.lng));
+});
+
+// ── Start-point helpers ───────────────────────────────────────────────────────
+function coordLabel(lat, lng) {
+  return `${Math.abs(lat).toFixed(4)}°${lat>=0?'N':'S'}, ${Math.abs(lng).toFixed(4)}°${lng>=0?'E':'W'}`;
+}
+
+function setStart(lat, lng, label) {
+  startLat = lat; startLng = lng;
+  startMarker.setLatLng([lat, lng]);
+  document.getElementById('start-label').textContent = 'Start: ' + label;
+  // Clear existing routes — they were from a different start point
+  if (routes.length) {
+    routes = []; polylines = []; selectedIdx = 0;
+    routeLayer.clearLayers();
+    document.getElementById('route-list').style.display  = 'none';
+    document.getElementById('stats-row').style.display   = 'none';
+    document.getElementById('elev-section').style.display = 'none';
+    document.getElementById('dl-section').style.display  = 'none';
+    setStatus('Start moved — tap Generate Routes.', '');
+  }
+  if (!routes.length) previewExtent(parseInt(document.getElementById('dist-slider').value));
+}
+
+function resetToHome() {
+  setStart(HOME_LAT, HOME_LNG, 'Home');
+}
+
+function useMyLocation() {
+  if (!navigator.geolocation) { setStatus('Geolocation not available on this device.', 'err'); return; }
+  const btn = document.getElementById('loc-btn');
+  btn.classList.add('locating');
+  btn.textContent = '…';
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      btn.classList.remove('locating');
+      btn.innerHTML = '📍 My location';
+      setStart(pos.coords.latitude, pos.coords.longitude, 'My location');
+      map.setView([pos.coords.latitude, pos.coords.longitude], map.getZoom());
+    },
+    err => {
+      btn.classList.remove('locating');
+      btn.innerHTML = '📍 My location';
+      setStatus('Location unavailable: ' + err.message, 'err');
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
 
 routeLayer = L.layerGroup().addTo(map);
 
@@ -342,7 +430,7 @@ async function fetchRoute(key, meters, seed) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': key },
     body: JSON.stringify({
-      coordinates: [[HOME_LNG, HOME_LAT]],
+      coordinates: [[startLng, startLat]],
       options: {
         round_trip: { length: meters, points: 5, seed },
         // cycling profiles only accept 'ferries'/'steps' here — 'highways'
@@ -364,14 +452,15 @@ async function fetchRoute(key, meters, seed) {
 // ── Scoring ───────────────────────────────────────────────────────────────────
 function circularity(coords) {
   if (coords.length < 2) return 0;
+  const cosLat = Math.cos(startLat * Math.PI / 180);
   const maxD = Math.max(...coords.map(c => {
-    const dx = (c[0] - HOME_LNG) * Math.cos(HOME_LAT * Math.PI / 180) * 111.32;
-    const dy = (c[1] - HOME_LAT) * 111.32;
+    const dx = (c[0] - startLng) * cosLat * 111.32;
+    const dy = (c[1] - startLat) * 111.32;
     return Math.sqrt(dx*dx + dy*dy);
   }));
   let km = 0;
   for (let i = 1; i < coords.length; i++) {
-    const dx = (coords[i][0]-coords[i-1][0]) * Math.cos(HOME_LAT*Math.PI/180) * 111.32;
+    const dx = (coords[i][0]-coords[i-1][0]) * cosLat * 111.32;
     const dy = (coords[i][1]-coords[i-1][1]) * 111.32;
     km += Math.sqrt(dx*dx + dy*dy);
   }
