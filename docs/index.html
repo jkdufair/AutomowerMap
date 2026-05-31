@@ -478,8 +478,9 @@ async function generateRoutes() {
         circ,
         inBand:  within,
         distErr: Math.abs(distMi / miles - 1),
-        // Rank by flatness + circularity. Without elevation, rank circularity only.
-        score: (hasElev ? aFt : 0) + (1 - circ) * (hasElev ? aFt : 1000) * 0.3,
+        // Rank by climb *per mile* so a short route isn't called "flattest"
+        // just for being short, with a mild circularity tiebreak.
+        score: (hasElev ? aFt / distMi : 0) + (1 - circ) * (hasElev ? aFt / distMi : 100) * 0.3,
       });
       if (within) inBand++;
     } catch (e) {
@@ -492,10 +493,14 @@ async function generateRoutes() {
   setBusy(false);
   if (!candidates.length) { setStatus(`All requests failed: ${lastErr || 'check your API key.'}`, 'err'); return; }
 
-  // Prefer in-band routes; if we came up short, fill with the closest misses.
-  const good = candidates.filter(c => c.inBand);
-  const rest = candidates.filter(c => !c.inBand).sort((a, b) => a.distErr - b.distErr);
-  routes = good.concat(rest).slice(0, want);
+  // Prefer in-band routes. If short of `want`, pad ONLY with slightly-longer
+  // routes — never shorter than the -2% floor, capped at +12%. A too-short
+  // ride is worse than simply showing fewer options.
+  const good  = candidates.filter(c => c.inBand);
+  const overs = candidates
+    .filter(c => !c.inBand && c.distMi >= miles * DIST_MIN_FACTOR && c.distMi <= miles * 1.12)
+    .sort((a, b) => a.distErr - b.distErr);
+  routes = good.concat(overs).slice(0, want);
 
   routes.sort((a, b) => a.score - b.score);
   selectedIdx = 0;
@@ -629,25 +634,31 @@ function drawElevation(coords, color, totalMi) {
     return cum;
   });
   const rawTotal = raw[raw.length - 1] || 1;
-  const xs = raw.map(v => (v / rawTotal * totalMi).toFixed(1));
-  const ys = pts.map(c => Math.round(c[2] * 3.28084));
-  const hex = color + '30'; // 18% alpha fill
+  // Linear {x = miles, y = feet} points. A linear x-axis labels real distance;
+  // a category axis would label tick *indices* instead (the 0/36/72/144 bug).
+  const data = pts.map((c, i) => ({
+    x: +(raw[i] / rawTotal * totalMi).toFixed(2),
+    y: Math.round(c[2] * 3.28084),
+  }));
+  const hex = color + '30'; // ~18% alpha fill
 
   if (elevChart) elevChart.destroy();
   elevChart = new Chart(document.getElementById('elev-canvas').getContext('2d'), {
     type: 'line',
     data: {
-      labels: xs,
-      datasets: [{ data: ys, borderColor: color, backgroundColor: hex,
+      datasets: [{ data, borderColor: color, backgroundColor: hex,
         borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.3 }]
     },
     options: {
+      parsing: false,
       responsive: true, maintainAspectRatio: false, animation: false,
       plugins: { legend: { display: false }, tooltip: {
-        callbacks: { label: c => `${c.parsed.y} ft`, title: c => `${c[0].label} mi` }
+        callbacks: { label: c => `${c.parsed.y} ft`, title: c => `${c[0].parsed.x.toFixed(1)} mi` }
       }},
       scales: {
-        x: { ticks: { color: '#6b7280', maxTicksLimit: 5, callback: v => `${v}mi` }, grid: { color: '#1f2937' } },
+        x: { type: 'linear', min: 0, max: +totalMi.toFixed(1),
+             ticks: { color: '#6b7280', maxTicksLimit: 6, callback: v => `${Math.round(v)}mi` },
+             grid: { color: '#1f2937' } },
         y: { ticks: { color: '#6b7280', callback: v => `${v}ft` }, grid: { color: '#1f2937' } }
       }
     }
