@@ -550,18 +550,19 @@ function elevFromGeometry(coords) {
 
 // ── Generate ──────────────────────────────────────────────────────────────────
 
-// Distance is treated as a soft minimum: accept 2% short to 4% long, aim +1%.
-const DIST_MIN_FACTOR = 0.98;
-const DIST_MAX_FACTOR = 1.04;
-const DIST_AIM_FACTOR = 1.01;
+// Distance tolerance: the displayed routes should be -2% to +4% of target.
+// We aim slightly high (+2%) because ORS tends to undershoot slightly.
+const DIST_MIN_FACTOR  = 0.98;   // hard floor for display
+const DIST_MAX_FACTOR  = 1.04;   // soft cap for display
+const DIST_AIM_FACTOR  = 1.02;   // what we ask ORS to aim for
+const DIST_FILL_FLOOR  = 0.90;   // fallback floor when short of `want` routes
 
-// ORS round_trip overshoots the requested length (often 2-3x). Drive the
-// *actual* length into [minM, maxM] by rescaling the request and retrying,
-// keeping whichever attempt lands closest to the aim. Returns the chosen
-// feature plus how many ORS calls it consumed.
+// ORS round_trip overshoots the requested length (often 2-3x). Rescale and
+// retry until we land in [minM, maxM] or exhaust attempts. 5 attempts gives
+// enough iterations to converge even for stubborn seeds.
 async function fetchConstrained(key, aimM, minM, maxM, seed, onTry) {
   let reqLen = aimM, best = null, calls = 0;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
     if (onTry) onTry(attempt);
     const gj     = await fetchRoute(key, Math.round(reqLen), seed);
     calls++;
@@ -569,8 +570,8 @@ async function fetchConstrained(key, aimM, minM, maxM, seed, onTry) {
     const actual = f.properties.summary.distance;
     const d      = Math.abs(actual - aimM);
     if (!best || d < best.d) best = { f, actual, d };
-    if (actual >= minM && actual <= maxM) { best = { f, actual, d }; break; }
-    reqLen = Math.max(aimM * 0.2, Math.min(aimM * 2.5, reqLen * (aimM / actual)));
+    if (actual >= minM && actual <= maxM) break;
+    reqLen = Math.max(aimM * 0.15, Math.min(aimM * 3, reqLen * (aimM / actual)));
   }
   return { feature: best.f, actual: best.actual, calls };
 }
@@ -594,11 +595,11 @@ async function generateRoutes() {
   document.getElementById('elev-section').style.display = 'none';
   document.getElementById('dl-section').style.display = 'none';
 
-  // Keep drawing fresh seeds until we have `want` in-band routes, bounded by
-  // a seed cap and an API-call budget so we never hammer the free quota.
+  // Try seeds until we have `want` in-band routes, subject to a seed cap and
+  // an API-call budget. Budget of 75 = 15 seeds × 5 attempts each worst-case.
   const candidates = [];
-  let inBand = 0, seedN = 0, lastErr = '', budget = 36;
-  const maxSeeds = want * 5;
+  let inBand = 0, seedN = 0, lastErr = '', budget = 75;
+  const maxSeeds = want * 8;
 
   while (inBand < want && seedN < maxSeeds && budget > 0) {
     const seed = seedN * 17 + 3;
@@ -612,7 +613,6 @@ async function generateRoutes() {
       const s      = feature.properties.summary;
       const coords = feature.geometry.coordinates;
 
-      // Robust elevation: prefer summary, fall back to geometry, else n/a
       let ascentM = s.ascent, descentM = s.descent;
       if (!Number.isFinite(ascentM)) {
         const e  = elevFromGeometry(coords);
@@ -634,8 +634,6 @@ async function generateRoutes() {
         circ,
         inBand:  within,
         distErr: Math.abs(distMi / miles - 1),
-        // Rank by climb *per mile* so a short route isn't called "flattest"
-        // just for being short, with a mild circularity tiebreak.
         score: (hasElev ? aFt / distMi : 0) + (1 - circ) * (hasElev ? aFt / distMi : 100) * 0.3,
       });
       if (within) inBand++;
@@ -649,14 +647,14 @@ async function generateRoutes() {
   setBusy(false);
   if (!candidates.length) { setStatus(`All requests failed: ${lastErr || 'check your API key.'}`, 'err'); return; }
 
-  // Prefer in-band routes. If short of `want`, pad ONLY with slightly-longer
-  // routes — never shorter than the -2% floor, capped at +12%. A too-short
-  // ride is worse than simply showing fewer options.
+  // Prefer in-band routes. If still short of `want`, fill with the closest
+  // near-misses above DIST_FILL_FLOOR (90%) sorted by distance accuracy.
+  // This avoids showing an empty list when ORS stubbornly undershoots.
   const good  = candidates.filter(c => c.inBand);
-  const overs = candidates
-    .filter(c => !c.inBand && c.distMi >= miles * DIST_MIN_FACTOR && c.distMi <= miles * 1.12)
+  const fills = candidates
+    .filter(c => !c.inBand && c.distMi >= miles * DIST_FILL_FLOOR)
     .sort((a, b) => a.distErr - b.distErr);
-  routes = good.concat(overs).slice(0, want);
+  routes = good.concat(fills).slice(0, want);
 
   routes.sort((a, b) => a.score - b.score);
   selectedIdx = 0;
