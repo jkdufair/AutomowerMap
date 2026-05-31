@@ -394,22 +394,29 @@ function elevFromGeometry(coords) {
 
 // ── Generate ──────────────────────────────────────────────────────────────────
 
+// Distance is treated as a soft minimum: accept 2% short to 4% long, aim +1%.
+const DIST_MIN_FACTOR = 0.98;
+const DIST_MAX_FACTOR = 1.04;
+const DIST_AIM_FACTOR = 1.01;
+
 // ORS round_trip overshoots the requested length (often 2-3x). Drive the
-// *actual* length toward the target by rescaling the request and retrying,
-// keeping whichever attempt lands closest.
-async function fetchConstrained(key, targetM, seed, onTry) {
-  let reqLen = targetM, best = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
+// *actual* length into [minM, maxM] by rescaling the request and retrying,
+// keeping whichever attempt lands closest to the aim. Returns the chosen
+// feature plus how many ORS calls it consumed.
+async function fetchConstrained(key, aimM, minM, maxM, seed, onTry) {
+  let reqLen = aimM, best = null, calls = 0;
+  for (let attempt = 0; attempt < 4; attempt++) {
     if (onTry) onTry(attempt);
     const gj     = await fetchRoute(key, Math.round(reqLen), seed);
+    calls++;
     const f      = gj.features[0];
     const actual = f.properties.summary.distance;
-    if (!best || Math.abs(actual - targetM) < Math.abs(best.actual - targetM)) best = { f, actual };
-    const err = actual / targetM;                       // >1 = too long
-    if (Math.abs(err - 1) <= 0.08) break;               // within 8% — good enough
-    reqLen = Math.max(targetM * 0.25, Math.min(targetM * 2, reqLen / err));
+    const d      = Math.abs(actual - aimM);
+    if (!best || d < best.d) best = { f, actual, d };
+    if (actual >= minM && actual <= maxM) { best = { f, actual, d }; break; }
+    reqLen = Math.max(aimM * 0.2, Math.min(aimM * 2.5, reqLen * (aimM / actual)));
   }
-  return best.f;
+  return { feature: best.f, actual: best.actual, calls };
 }
 
 async function generateRoutes() {
@@ -418,7 +425,10 @@ async function generateRoutes() {
 
   const miles   = parseInt(document.getElementById('dist-slider').value);
   const targetM = miles * 1609.344;
-  const seeds   = Array.from({ length: numCompare }, (_, i) => i * 17 + 3);
+  const minM    = targetM * DIST_MIN_FACTOR;
+  const maxM    = targetM * DIST_MAX_FACTOR;
+  const aimM    = targetM * DIST_AIM_FACTOR;
+  const want    = numCompare;
 
   routes = []; polylines = []; selectedIdx = 0;
   setBusy(true);
@@ -428,16 +438,25 @@ async function generateRoutes() {
   document.getElementById('elev-section').style.display = 'none';
   document.getElementById('dl-section').style.display = 'none';
 
-  let done = 0, lastErr = '';
-  for (const seed of seeds) {
-    done++;
+  // Keep drawing fresh seeds until we have `want` in-band routes, bounded by
+  // a seed cap and an API-call budget so we never hammer the free quota.
+  const candidates = [];
+  let inBand = 0, seedN = 0, lastErr = '', budget = 36;
+  const maxSeeds = want * 5;
+
+  while (inBand < want && seedN < maxSeeds && budget > 0) {
+    const seed = seedN * 17 + 3;
+    seedN++;
     try {
-      const feature = await fetchConstrained(key, targetM, seed, (attempt) =>
-        setStatus(`Fetching option ${done} of ${numCompare}${attempt ? ' (tuning length…)' : ''}`));
+      const { feature, actual, calls } = await fetchConstrained(
+        key, aimM, minM, maxM, seed,
+        () => setStatus(`Finding routes… ${inBand} of ${want} so far`));
+      budget -= calls;
+
       const s      = feature.properties.summary;
       const coords = feature.geometry.coordinates;
 
-      // Robust elevation: prefer summary, fall back to geometry, else mark n/a
+      // Robust elevation: prefer summary, fall back to geometry, else n/a
       let ascentM = s.ascent, descentM = s.descent;
       if (!Number.isFinite(ascentM)) {
         const e  = elevFromGeometry(coords);
@@ -447,30 +466,36 @@ async function generateRoutes() {
       const aFt     = ascentM * 3.28084;
       const hasElev = Number.isFinite(aFt);
       const circ    = circularity(coords);
+      const distMi  = s.distance / 1609.344;
+      const within  = actual >= minM && actual <= maxM;
 
-      routes.push({
-        feature, seed,
-        distMi:    s.distance / 1609.344,
+      candidates.push({
+        feature, seed, distMi,
         ascentFt:  aFt,
         descentFt: descentM * 3.28084,
         hasElev,
         durationS: s.duration,
         circ,
+        inBand:  within,
+        distErr: Math.abs(distMi / miles - 1),
         // Rank by flatness + circularity. Without elevation, rank circularity only.
         score: (hasElev ? aFt : 0) + (1 - circ) * (hasElev ? aFt : 1000) * 0.3,
       });
+      if (within) inBand++;
     } catch (e) {
       lastErr = e.message;
       console.warn('seed', seed, e.message);
+      budget--;
     }
   }
 
   setBusy(false);
-  if (!routes.length) { setStatus(`All requests failed: ${lastErr || 'check your API key.'}`, 'err'); return; }
+  if (!candidates.length) { setStatus(`All requests failed: ${lastErr || 'check your API key.'}`, 'err'); return; }
 
-  // Keep only routes within ±15% of the target distance, if any qualify.
-  const onTarget = routes.filter(r => Math.abs(r.distMi / miles - 1) <= 0.15);
-  if (onTarget.length) routes = onTarget;
+  // Prefer in-band routes; if we came up short, fill with the closest misses.
+  const good = candidates.filter(c => c.inBand);
+  const rest = candidates.filter(c => !c.inBand).sort((a, b) => a.distErr - b.distErr);
+  routes = good.concat(rest).slice(0, want);
 
   routes.sort((a, b) => a.score - b.score);
   selectedIdx = 0;
@@ -496,12 +521,21 @@ function renderAll() {
     polylines.push(pl);
   });
 
-  // Fit to all routes combined
-  const allLL = routes.flatMap(r => r.feature.geometry.coordinates.map(c => [c[1], c[0]]));
-  map.fitBounds(L.latLngBounds(allLL), { padding: [28, 28] });
-
   buildRouteCards();
   showSelected();
+
+  // The bottom panel just grew (cards/stats/chart), shrinking the map. Let the
+  // layout settle, tell Leaflet its container resized, then fit to the routes —
+  // otherwise fitBounds uses the old, taller map and the loop runs off-screen.
+  requestAnimationFrame(() => {
+    map.invalidateSize(false);
+    fitToRoutes();
+  });
+}
+
+function fitToRoutes() {
+  const allLL = routes.flatMap(r => r.feature.geometry.coordinates.map(c => [c[1], c[0]]));
+  if (allLL.length) map.fitBounds(L.latLngBounds(allLL), { padding: [25, 25] });
 }
 
 // ── Route cards ───────────────────────────────────────────────────────────────
@@ -565,7 +599,7 @@ function showSelected() {
 
   const coords = r.feature.geometry.coordinates;
   if (coords[0]?.length >= 3) {
-    drawElevation(coords, color);
+    drawElevation(coords, color, r.distMi);
     document.getElementById('elev-section').style.display = 'block';
   } else {
     document.getElementById('elev-section').style.display = 'none';
@@ -578,19 +612,24 @@ function showSelected() {
 }
 
 // ── Elevation chart ───────────────────────────────────────────────────────────
-function drawElevation(coords, color) {
+function drawElevation(coords, color, totalMi) {
   const MAX  = 150;
   const step = Math.max(1, Math.floor(coords.length / MAX));
   const pts  = coords.filter((_, i) => i % step === 0);
+
+  // Raw straight-line cumulative distance, then normalise so the axis ends
+  // exactly at the route's real distance — robust against coordinate scaling.
   let cum = 0;
-  const xs = pts.map((c, i) => {
+  const raw = pts.map((c, i) => {
     if (i > 0) {
-      const dx = (c[0]-pts[i-1][0]) * Math.cos(HOME_LAT*Math.PI/180) * 111.32 * 0.621371;
-      const dy = (c[1]-pts[i-1][1]) * 111.32 * 0.621371;
+      const dx = (c[0]-pts[i-1][0]) * Math.cos(HOME_LAT*Math.PI/180);
+      const dy = (c[1]-pts[i-1][1]);
       cum += Math.sqrt(dx*dx + dy*dy);
     }
-    return cum.toFixed(1);
+    return cum;
   });
+  const rawTotal = raw[raw.length - 1] || 1;
+  const xs = raw.map(v => (v / rawTotal * totalMi).toFixed(1));
   const ys = pts.map(c => Math.round(c[2] * 3.28084));
   const hex = color + '30'; // 18% alpha fill
 
