@@ -145,12 +145,12 @@
 
     /* ── Stats ── */
     #stats-row {
-      display: none; grid-template-columns: repeat(3, 1fr);
+      display: none; grid-template-columns: repeat(4, 1fr);
       gap: 1px; background: var(--border); flex-shrink: 0;
     }
-    .stat-cell { background: var(--surface); padding: 9px 6px; text-align: center; }
-    .stat-cell .sv { font-size: 1rem; font-weight: 700; }
-    .stat-cell .sl { font-size: 0.67rem; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: .04em; }
+    .stat-cell { background: var(--surface); padding: 9px 4px; text-align: center; }
+    .stat-cell .sv { font-size: 0.9rem; font-weight: 700; }
+    .stat-cell .sl { font-size: 0.62rem; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: .03em; }
 
     /* ── Elevation chart ── */
     #elev-section { display: none; padding: 10px 16px 4px; flex-shrink: 0; }
@@ -265,9 +265,10 @@
 
     <!-- Stats for selected route -->
     <div id="stats-row">
-      <div class="stat-cell"><div class="sv" id="s-dist">—</div><div class="sl">Miles</div></div>
-      <div class="stat-cell"><div class="sv" id="s-up">—</div>  <div class="sl">Elev Gain</div></div>
-      <div class="stat-cell"><div class="sv" id="s-time">—</div><div class="sl">Est Time</div></div>
+      <div class="stat-cell"><div class="sv" id="s-dist">—</div> <div class="sl">Miles</div></div>
+      <div class="stat-cell"><div class="sv" id="s-up">—</div>   <div class="sl">Elev Gain</div></div>
+      <div class="stat-cell"><div class="sv" id="s-grade">—</div><div class="sl">Max Grade</div></div>
+      <div class="stat-cell"><div class="sv" id="s-time">—</div> <div class="sl">Est Time</div></div>
     </div>
 
     <div id="elev-section">
@@ -547,22 +548,28 @@ async function fetchRouteWithRetry(key, meters, seed, maxRetries = 2) {
 }
 
 // ── Scoring ───────────────────────────────────────────────────────────────────
-function circularity(coords) {
-  if (coords.length < 2) return 0;
+
+// Steepest uphill grade over any 100 m horizontal window; returns % or null (no elevation).
+// Uses a rolling-window approach to smooth GPS noise.
+function maxGrade(coords) {
+  if (!coords[0] || coords[0].length < 3) return null;
   const cosLat = Math.cos(startLat * Math.PI / 180);
-  const maxD = Math.max(...coords.map(c => {
-    const dx = (c[0] - startLng) * cosLat * 111.32;
-    const dy = (c[1] - startLat) * 111.32;
-    return Math.sqrt(dx*dx + dy*dy);
-  }));
-  let km = 0;
-  for (let i = 1; i < coords.length; i++) {
-    const dx = (coords[i][0]-coords[i-1][0]) * cosLat * 111.32;
-    const dy = (coords[i][1]-coords[i-1][1]) * 111.32;
-    km += Math.sqrt(dx*dx + dy*dy);
+  const WINDOW_M = 100;
+  let peak = 0;
+  for (let i = 0; i < coords.length - 1; i++) {
+    let cum = 0;
+    for (let j = i + 1; j < coords.length; j++) {
+      const dlng = (coords[j][0] - coords[j-1][0]) * cosLat * 111320;
+      const dlat = (coords[j][1] - coords[j-1][1]) * 111320;
+      cum += Math.sqrt(dlng*dlng + dlat*dlat);
+      if (cum >= WINDOW_M) {
+        const rise = coords[j][2] - coords[i][2];
+        if (rise > 0) peak = Math.max(peak, rise / cum * 100);
+        break;
+      }
+    }
   }
-  const idealR = km / (2 * Math.PI);
-  return Math.min(maxD, idealR) / Math.max(maxD, idealR);
+  return peak;
 }
 
 // Ascent/descent (metres) computed directly from 3D geometry — used as a
@@ -649,22 +656,25 @@ async function generateRoutes() {
         ascentM  = e ? e.ascent  : NaN;
         descentM = e ? e.descent : NaN;
       }
-      const aFt     = ascentM * 3.28084;
-      const hasElev = Number.isFinite(aFt);
-      const circ    = circularity(coords);
-      const distMi  = s.distance / 1609.344;
-      const within  = actual >= minM && actual <= maxM;
+      const aFt      = ascentM * 3.28084;
+      const hasElev  = Number.isFinite(aFt);
+      const gradeVal = maxGrade(coords);        // % or null
+      const distMi   = s.distance / 1609.344;
+      const within   = actual >= minM && actual <= maxM;
+      const climbMi  = hasElev ? aFt / distMi : 0;
+      const gradePct = gradeVal ?? 0;
 
       candidates.push({
         feature, seed, distMi,
         ascentFt:  aFt,
         descentFt: descentM * 3.28084,
         hasElev,
+        gradeVal,
         durationS: s.duration,
-        circ,
         inBand:  within,
         distErr: Math.abs(distMi / miles - 1),
-        score: (hasElev ? aFt / distMi : 0) + (1 - circ) * (hasElev ? aFt / distMi : 100) * 0.3,
+        // Max grade (× 5 to bring it into ft/mi scale) weighted 70%; climb/mi weighted 30%
+        score: gradePct * 5 * 0.7 + climbMi * 0.3,
       });
       if (within) inBand++;
     } catch (e) {
@@ -732,15 +742,18 @@ function buildRouteCards() {
   const list = document.getElementById('route-list');
   list.innerHTML = '';
   routes.forEach((r, i) => {
-    const color = ROUTE_COLORS[i % ROUTE_COLORS.length];
-    const tag   = i === 0 ? 'Flattest' : i === 1 ? '2nd' : i === 2 ? '3rd' : `${i+1}th`;
-    const card  = document.createElement('div');
+    const color    = ROUTE_COLORS[i % ROUTE_COLORS.length];
+    const tag      = i === 0 ? 'Gentlest' : i === 1 ? '2nd' : i === 2 ? '3rd' : `${i+1}th`;
+    const gainStr  = r.hasElev  ? `+${Math.round(r.ascentFt)} ft` : '';
+    const gradeStr = r.gradeVal != null ? `max ${r.gradeVal.toFixed(1)}%` : '';
+    const gainLine = [gainStr, gradeStr].filter(Boolean).join(' · ') || 'elev n/a';
+    const card     = document.createElement('div');
     card.className = 'route-card' + (i === selectedIdx ? ' active' : '');
     card.style.borderColor = i === selectedIdx ? color : 'var(--border)';
     card.innerHTML = `
       <div class="rc-dot" style="background:${color}">${i+1}</div>
       <div class="rc-dist">${r.distMi.toFixed(1)} mi</div>
-      <div class="rc-gain">${r.hasElev ? '+' + Math.round(r.ascentFt) + ' ft' : 'elev n/a'}</div>
+      <div class="rc-gain">${gainLine}</div>
       <div class="rc-tag" style="color:${color}">${tag}</div>`;
     card.onclick = () => selectRoute(i);
     list.appendChild(card);
@@ -782,6 +795,8 @@ function showSelected() {
   document.getElementById('s-dist').style.color  = color;
   document.getElementById('s-up').textContent    = r.hasElev ? `+${Math.round(r.ascentFt)}ft` : 'n/a';
   document.getElementById('s-up').style.color    = color;
+  document.getElementById('s-grade').textContent = r.gradeVal != null ? `${r.gradeVal.toFixed(1)}%` : 'n/a';
+  document.getElementById('s-grade').style.color = color;
   document.getElementById('s-time').textContent  = fmtTime(r.durationS);
   document.getElementById('s-time').style.color  = color;
   document.getElementById('stats-row').style.display = 'grid';
@@ -796,7 +811,7 @@ function showSelected() {
   document.getElementById('dl-section').style.display = 'block';
 
   const elevTxt = r.hasElev ? ` · +${Math.round(r.ascentFt)} ft` : '';
-  const note    = selectedIdx === 0 ? ' — flattest + most circular' : '';
+  const note    = selectedIdx === 0 ? ' — gentlest grade' : '';
   setStatus(`Route ${selectedIdx + 1} of ${routes.length}: ${r.distMi.toFixed(1)} mi${elevTxt}${note}`, 'ok');
 }
 
