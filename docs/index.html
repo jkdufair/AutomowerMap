@@ -296,8 +296,8 @@
     <div class="compare-row">
       <label>Compare</label>
       <div class="seg-ctrl" id="compare-ctrl">
-        <button onclick="setCompare(3,this)">3 routes</button>
-        <button onclick="setCompare(5,this)" class="active">5 routes</button>
+        <button onclick="setCompare(3,this)" class="active">3 routes</button>
+        <button onclick="setCompare(5,this)">5 routes</button>
         <button onclick="setCompare(8,this)">8 routes</button>
       </div>
     </div>
@@ -310,7 +310,7 @@
 const ROUTE_COLORS = ['#34d399','#60a5fa','#fbbf24','#c084fc','#fb7185','#2dd4bf','#fb923c','#e879f9'];
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let routes = [], selectedIdx = 0, numCompare = 5;
+let routes = [], selectedIdx = 0, numCompare = 3;
 let polylines = [], routeLayer, elevChart;
 let startLat = null, startLng = null;
 let startMarker = null;
