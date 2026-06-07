@@ -310,7 +310,7 @@
 const ROUTE_COLORS = ['#34d399','#60a5fa','#fbbf24','#c084fc','#fb7185','#2dd4bf','#fb923c','#e879f9'];
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let routes = [], selectedIdx = 0, numCompare = 3, targetMiles = 30;
+let routes = [], selectedIdx = 0, numCompare = 3;
 let polylines = [], routeLayer, elevChart;
 let startLat = null, startLng = null;
 let startMarker = null;
@@ -618,7 +618,6 @@ async function generateRoutes() {
   if (!key) { setStatus('Tap ⚙︎ to add your API key first.', 'err'); openSettings(); return; }
 
   const miles   = parseInt(document.getElementById('dist-slider').value);
-  targetMiles = miles;
   const targetM = miles * 1609.344;
   const minM    = targetM * DIST_MIN_FACTOR;
   const maxM    = targetM * DIST_MAX_FACTOR;
@@ -688,16 +687,14 @@ async function generateRoutes() {
   setBusy(false);
   if (!candidates.length) { setStatus(`All requests failed: ${lastErr || 'check your API key.'}`, 'err'); return; }
 
-  // Prefer in-band routes; fill with near-misses above the floor; last resort:
-  // show the closest candidates regardless of distance so something always appears.
+  // Prefer in-band routes. If still short of `want`, fill with the closest
+  // near-misses above DIST_FILL_FLOOR (90%) sorted by distance accuracy.
+  // This avoids showing an empty list when ORS stubbornly undershoots.
   const good  = candidates.filter(c => c.inBand);
   const fills = candidates
     .filter(c => !c.inBand && c.distMi >= miles * DIST_FILL_FLOOR)
     .sort((a, b) => a.distErr - b.distErr);
   routes = good.concat(fills).slice(0, want);
-  if (!routes.length) {
-    routes = [...candidates].sort((a, b) => a.distErr - b.distErr).slice(0, want);
-  }
 
   routes.sort((a, b) => a.score - b.score);
   selectedIdx = 0;
@@ -813,11 +810,9 @@ function showSelected() {
   }
   document.getElementById('dl-section').style.display = 'block';
 
-  const elevTxt  = r.hasElev ? ` · +${Math.round(r.ascentFt)} ft` : '';
-  const shortTxt = !r.inBand && r.distMi < targetMiles * DIST_MIN_FACTOR
-    ? ` (ORS couldn't reach ${targetMiles} mi — closest available)` : '';
-  const note     = selectedIdx === 0 ? ' — gentlest grade' : '';
-  setStatus(`Route ${selectedIdx + 1} of ${routes.length}: ${r.distMi.toFixed(1)} mi${elevTxt}${note}${shortTxt}`, shortTxt ? '' : 'ok');
+  const elevTxt = r.hasElev ? ` · +${Math.round(r.ascentFt)} ft` : '';
+  const note    = selectedIdx === 0 ? ' — gentlest grade' : '';
+  setStatus(`Route ${selectedIdx + 1} of ${routes.length}: ${r.distMi.toFixed(1)} mi${elevTxt}${note}`, 'ok');
 }
 
 // ── Elevation chart ───────────────────────────────────────────────────────────
